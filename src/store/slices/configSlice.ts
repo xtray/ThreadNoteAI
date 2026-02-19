@@ -1,13 +1,21 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { AVAILABLE_MODELS, DEFAULT_MODEL_ID } from '../../utils/models';
+import {
+    buildCustomModelId,
+    CustomProviderConfig,
+    makeCustomProviderId,
+    sanitizeCustomProviders,
+} from '../../utils/customModels';
 
 export interface ConfigState {
     apiKeys: Record<string, string>;   // providerId → apiKey
     mainModelId: string;               // default model for main thread
     subModelId: string;                // default model for sub-thread
+    customProviders: CustomProviderConfig[];
     settingsOpen: boolean;
 }
 
-const STORAGE_KEY = 'wrapperai_config';
+const STORAGE_KEY = 'threadnote_ai_config';
 
 const loadFromStorage = (): Partial<ConfigState> => {
     try {
@@ -21,9 +29,26 @@ const saved = loadFromStorage();
 
 const initialState: ConfigState = {
     apiKeys: saved.apiKeys ?? {},
-    mainModelId: saved.mainModelId ?? 'MiniMax-M2.5',
-    subModelId: saved.subModelId ?? 'MiniMax-M2.5',
+    mainModelId: saved.mainModelId ?? DEFAULT_MODEL_ID,
+    subModelId: saved.subModelId ?? DEFAULT_MODEL_ID,
+    customProviders: sanitizeCustomProviders(saved.customProviders),
     settingsOpen: false,
+};
+
+const isModelIdAvailable = (state: ConfigState, modelId: string) => {
+    if (AVAILABLE_MODELS.some((model) => model.id === modelId)) return true;
+    return state.customProviders.some((provider) =>
+        provider.models.some((model) => buildCustomModelId(provider.id, model) === modelId)
+    );
+};
+
+const ensureSelectedModels = (state: ConfigState) => {
+    if (!isModelIdAvailable(state, state.mainModelId)) {
+        state.mainModelId = DEFAULT_MODEL_ID;
+    }
+    if (!isModelIdAvailable(state, state.subModelId)) {
+        state.subModelId = DEFAULT_MODEL_ID;
+    }
 };
 
 const configSlice = createSlice({
@@ -42,6 +67,68 @@ const configSlice = createSlice({
             state.subModelId = action.payload;
             persistConfig(state);
         },
+        addCustomProvider: (state, action: PayloadAction<{ id?: string } | undefined>) => {
+            const id = action.payload?.id || makeCustomProviderId('custom');
+            state.customProviders.push({
+                id,
+                name: 'Custom Provider',
+                baseUrl: '',
+                apiKey: '',
+                models: [],
+            });
+            persistConfig(state);
+        },
+        updateCustomProvider: (
+            state,
+            action: PayloadAction<{
+                providerId: string;
+                changes: Partial<Omit<CustomProviderConfig, 'id' | 'models'>>;
+            }>
+        ) => {
+            const provider = state.customProviders.find((p) => p.id === action.payload.providerId);
+            if (!provider) return;
+            if (typeof action.payload.changes.name === 'string') {
+                provider.name = action.payload.changes.name;
+            }
+            if (typeof action.payload.changes.baseUrl === 'string') {
+                provider.baseUrl = action.payload.changes.baseUrl;
+            }
+            if (typeof action.payload.changes.apiKey === 'string') {
+                provider.apiKey = action.payload.changes.apiKey;
+            }
+            persistConfig(state);
+        },
+        removeCustomProvider: (state, action: PayloadAction<{ providerId: string }>) => {
+            state.customProviders = state.customProviders.filter((p) => p.id !== action.payload.providerId);
+            ensureSelectedModels(state);
+            persistConfig(state);
+        },
+        addCustomProviderModel: (state, action: PayloadAction<{ providerId: string }>) => {
+            const provider = state.customProviders.find((p) => p.id === action.payload.providerId);
+            if (!provider) return;
+            provider.models.push('new-model');
+            persistConfig(state);
+        },
+        updateCustomProviderModel: (
+            state,
+            action: PayloadAction<{ providerId: string; index: number; modelName: string }>
+        ) => {
+            const provider = state.customProviders.find((p) => p.id === action.payload.providerId);
+            if (!provider || action.payload.index < 0 || action.payload.index >= provider.models.length) return;
+            provider.models[action.payload.index] = action.payload.modelName;
+            ensureSelectedModels(state);
+            persistConfig(state);
+        },
+        removeCustomProviderModel: (
+            state,
+            action: PayloadAction<{ providerId: string; index: number }>
+        ) => {
+            const provider = state.customProviders.find((p) => p.id === action.payload.providerId);
+            if (!provider) return;
+            provider.models = provider.models.filter((_, idx) => idx !== action.payload.index);
+            ensureSelectedModels(state);
+            persistConfig(state);
+        },
         toggleSettings: (state) => {
             state.settingsOpen = !state.settingsOpen;
         },
@@ -50,16 +137,35 @@ const configSlice = createSlice({
             if (loaded.apiKeys) state.apiKeys = loaded.apiKeys;
             if (loaded.mainModelId) state.mainModelId = loaded.mainModelId;
             if (loaded.subModelId) state.subModelId = loaded.subModelId;
+            state.customProviders = sanitizeCustomProviders(loaded.customProviders);
+            ensureSelectedModels(state);
         },
     },
 });
 
 function persistConfig(state: ConfigState) {
     try {
-        const { apiKeys, mainModelId, subModelId } = state;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ apiKeys, mainModelId, subModelId }));
+        const { apiKeys, mainModelId, subModelId, customProviders } = state;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            apiKeys,
+            mainModelId,
+            subModelId,
+            customProviders,
+        }));
     } catch { /* ignore */ }
 }
 
-export const { setApiKey, setMainModel, setSubModel, toggleSettings, loadConfig } = configSlice.actions;
+export const {
+    setApiKey,
+    setMainModel,
+    setSubModel,
+    addCustomProvider,
+    updateCustomProvider,
+    removeCustomProvider,
+    addCustomProviderModel,
+    updateCustomProviderModel,
+    removeCustomProviderModel,
+    toggleSettings,
+    loadConfig,
+} = configSlice.actions;
 export default configSlice.reducer;

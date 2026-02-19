@@ -4,11 +4,14 @@ import remarkGfm from 'remark-gfm';
 import { ChevronDown, ChevronRight, Brain } from 'lucide-react';
 import { MessageAnnotation } from '../../store/slices/sessionSlice';
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 interface MessageContentProps {
     content: string;
     annotations?: MessageAnnotation[];
     onOpenSession?: (sessionId: string) => void;
     onDeleteSubSession?: (annotationId: string, subSessionId: string) => void;
+    onResponseContextMenu?: (e: React.MouseEvent<HTMLElement>, excerpt: string) => void;
 }
 
 /**
@@ -22,11 +25,16 @@ const MessageContent: React.FC<MessageContentProps> = ({
     annotations,
     onOpenSession,
     onDeleteSubSession,
+    onResponseContextMenu,
 }) => {
     const [thinkExpanded, setThinkExpanded] = useState(false);
     const [contextMenu, setContextMenu] = useState<{
         x: number;
         y: number;
+        annotationId: string;
+        subSessionId: string;
+    } | null>(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<{
         annotationId: string;
         subSessionId: string;
     } | null>(null);
@@ -71,7 +79,8 @@ const MessageContent: React.FC<MessageContentProps> = ({
 
     const injectHighlight = (annotation: MessageAnnotation) => {
         const root = markdownRef.current;
-        if (!root || !annotation.anchorText.trim()) return;
+        const anchorText = annotation.anchorText.trim();
+        if (!root || !anchorText) return;
 
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
             acceptNode(node) {
@@ -80,22 +89,60 @@ const MessageContent: React.FC<MessageContentProps> = ({
                 const parent = (node as Text).parentElement;
                 if (!parent) return NodeFilter.FILTER_SKIP;
                 if (parent.closest('.annotation-highlight')) return NodeFilter.FILTER_SKIP;
-                return text.includes(annotation.anchorText)
-                    ? NodeFilter.FILTER_ACCEPT
-                    : NodeFilter.FILTER_SKIP;
+                return NodeFilter.FILTER_ACCEPT;
             },
         });
 
-        const targetNode = walker.nextNode() as Text | null;
-        if (!targetNode) return;
+        const segments: Array<{ node: Text; start: number; end: number }> = [];
+        let fullText = '';
+        let current: Node | null = walker.nextNode();
+        while (current) {
+            const textNode = current as Text;
+            const text = textNode.textContent || '';
+            const start = fullText.length;
+            fullText += text;
+            segments.push({ node: textNode, start, end: fullText.length });
+            current = walker.nextNode();
+        }
+        if (segments.length === 0 || !fullText) return;
 
-        const text = targetNode.textContent || '';
-        const start = text.indexOf(annotation.anchorText);
-        if (start < 0) return;
+        let matchStart = fullText.indexOf(anchorText);
+        let matchLength = anchorText.length;
+        if (matchStart < 0) {
+            const loosePattern = escapeRegExp(anchorText).replace(/\s+/g, '\\s+');
+            const looseRegex = new RegExp(loosePattern);
+            const looseMatch = looseRegex.exec(fullText);
+            if (!looseMatch || looseMatch.index < 0) return;
+            matchStart = looseMatch.index;
+            matchLength = looseMatch[0].length;
+        }
+        const matchEnd = matchStart + matchLength;
+
+        const resolvePoint = (pos: number, preferNextAtBoundary: boolean) => {
+            for (let i = 0; i < segments.length; i += 1) {
+                const seg = segments[i];
+                const segLen = (seg.node.textContent || '').length;
+                if (pos < seg.end) {
+                    return { node: seg.node, offset: Math.max(0, Math.min(segLen, pos - seg.start)) };
+                }
+                if (pos === seg.end) {
+                    if (preferNextAtBoundary && i + 1 < segments.length) {
+                        continue;
+                    }
+                    return { node: seg.node, offset: segLen };
+                }
+            }
+            const lastSeg = segments[segments.length - 1];
+            return { node: lastSeg.node, offset: (lastSeg.node.textContent || '').length };
+        };
+
+        const startPoint = resolvePoint(matchStart, true);
+        const endPoint = resolvePoint(matchEnd, false);
+        if (!startPoint.node || !endPoint.node) return;
 
         const range = document.createRange();
-        range.setStart(targetNode, start);
-        range.setEnd(targetNode, start + annotation.anchorText.length);
+        range.setStart(startPoint.node, startPoint.offset);
+        range.setEnd(endPoint.node, endPoint.offset);
 
         const span = document.createElement('span');
         span.className = 'annotation-highlight';
@@ -104,7 +151,13 @@ const MessageContent: React.FC<MessageContentProps> = ({
         span.setAttribute('data-sub-session-id', annotation.subSessionId);
         span.setAttribute('title', 'Open sub-session');
 
-        range.surroundContents(span);
+        try {
+            range.surroundContents(span);
+        } catch {
+            const fragment = range.extractContents();
+            span.appendChild(fragment);
+            range.insertNode(span);
+        }
 
         const bubble = document.createElement('span');
         bubble.className = 'annotation-bubble-icon';
@@ -156,7 +209,19 @@ const MessageContent: React.FC<MessageContentProps> = ({
     const handleMarkdownContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
         const target = e.target as HTMLElement;
         const marker = target.closest('.annotation-highlight') as HTMLElement | null;
-        if (!marker) return;
+        if (!marker) {
+            if (!onResponseContextMenu) return;
+            const selection = window.getSelection();
+            const text = selection?.toString() || '';
+            const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+            const hasLocalSelection = !!range
+                && text.trim().length > 0
+                && !!markdownRef.current?.contains(range.commonAncestorContainer);
+            const excerpt = hasLocalSelection ? text.trim() : mainContent.trim();
+            if (!excerpt) return;
+            onResponseContextMenu(e, excerpt);
+            return;
+        }
 
         const annotationId = marker.getAttribute('data-annotation-id');
         const subSessionId = marker.getAttribute('data-sub-session-id');
@@ -225,14 +290,45 @@ const MessageContent: React.FC<MessageContentProps> = ({
                     <button
                         type="button"
                         onClick={() => {
-                            const confirmed = window.confirm('Delete this sub-session and its nested sub-sessions?');
-                            if (!confirmed) return;
-                            onDeleteSubSession?.(contextMenu.annotationId, contextMenu.subSessionId);
                             setContextMenu(null);
+                            setDeleteConfirm({
+                                annotationId: contextMenu.annotationId,
+                                subSessionId: contextMenu.subSessionId,
+                            });
                         }}
                     >
                         Delete Sub-session
                     </button>
+                </div>
+            )}
+            {deleteConfirm && (
+                <div
+                    className="confirm-modal-backdrop annotation-delete-backdrop"
+                    onClick={() => setDeleteConfirm(null)}
+                >
+                    <div className="confirm-modal annotation-delete-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3>Delete sub-session?</h3>
+                        <p>This will remove this sub-session and all nested sub-sessions.</p>
+                        <div className="confirm-modal-actions">
+                            <button
+                                className="confirm-cancel-btn"
+                                type="button"
+                                onClick={() => setDeleteConfirm(null)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="confirm-danger-btn"
+                                type="button"
+                                onClick={() => {
+                                    onDeleteSubSession?.(deleteConfirm.annotationId, deleteConfirm.subSessionId);
+                                    setDeleteConfirm(null);
+                                }}
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

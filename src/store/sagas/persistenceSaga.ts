@@ -1,7 +1,8 @@
 import { call, select, takeEvery } from 'redux-saga/effects';
 import { RootState } from '..';
-import { initDB, replaceAllSessionsData, saveActiveSessionId, saveMessage, saveSession } from '../../utils/db';
+import { initDB, replaceAllNotesData, replaceAllSessionsData, saveActiveSessionId, saveMessage, saveNote, saveSession } from '../../utils/db';
 import { ChatSession, Message } from '../slices/sessionSlice';
+import { Note } from '../slices/notesSlice';
 
 function* persistCreatedSession(action: { payload: ChatSession }) {
     try {
@@ -49,6 +50,19 @@ function* persistAnnotatedMessage(action: { payload: { sessionId: string; messag
     }
 }
 
+function* persistSessionModelChange(action: { payload: { sessionId: string } }) {
+    try {
+        yield call(initDB);
+        const state: RootState = yield select();
+        const session = state.sessions.sessions[action.payload.sessionId];
+        if (session) {
+            yield call(saveSession, session);
+        }
+    } catch {
+        // Keep app flow alive even if persistence fails temporarily.
+    }
+}
+
 function* persistActiveSession(action: { payload: string | null }) {
     try {
         yield call(initDB);
@@ -72,12 +86,35 @@ function* persistRemovedSubSession() {
     }
 }
 
+function* persistNote(action: { payload: Note }) {
+    try {
+        yield call(initDB);
+        yield call(saveNote, action.payload);
+    } catch {
+        // Keep app flow alive even if persistence fails temporarily.
+    }
+}
+
+function* persistLoadedNotes(action: { payload: Record<string, Note> }) {
+    try {
+        yield call(initDB);
+        yield call(replaceAllNotesData, action.payload);
+    } catch {
+        // Keep app flow alive even if persistence fails temporarily.
+    }
+}
+
 export function* persistenceSaga() {
     yield takeEvery('sessions/createSession' as any, persistCreatedSession as any);
     yield takeEvery('sessions/spawnSession' as any, persistSpawnedSession as any);
     yield takeEvery('sessions/addMessage' as any, persistMessage as any);
     yield takeEvery('sessions/addAnnotation' as any, persistAnnotatedMessage as any);
+    yield takeEvery('sessions/updateSessionModel' as any, persistSessionModelChange as any);
+    yield takeEvery('sessions/updateSessionContextMode' as any, persistSessionModelChange as any);
     yield takeEvery('sessions/removeAnnotationAndSubSession' as any, persistRemovedSubSession as any);
     yield takeEvery('sessions/removeSessionTree' as any, persistRemovedSubSession as any);
+    yield takeEvery('sessions/removeTurn' as any, persistRemovedSubSession as any);
     yield takeEvery('sessions/setActiveSession' as any, persistActiveSession as any);
+    yield takeEvery('notes/upsertNote' as any, persistNote as any);
+    yield takeEvery('notes/loadNotes' as any, persistLoadedNotes as any);
 }

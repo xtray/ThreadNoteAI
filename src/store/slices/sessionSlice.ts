@@ -23,6 +23,8 @@ export interface ChatSession {
     messages: Message[];
     modelId: string;
     isLoading: boolean;
+    contextMode?: 'new' | 'keep';
+    mainContextSnapshotMessages?: Message[];
 }
 
 export interface SessionState {
@@ -62,6 +64,21 @@ const sessionSlice = createSlice({
             const session = state.sessions[action.payload.sessionId]
             if (session) {
                 session.isLoading = action.payload.isLoading
+            }
+        },
+        updateSessionModel: (state, action: PayloadAction<{ sessionId: string; modelId: string }>) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (session) {
+                session.modelId = action.payload.modelId;
+            }
+        },
+        updateSessionContextMode: (
+            state,
+            action: PayloadAction<{ sessionId: string; contextMode: 'new' | 'keep' }>
+        ) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (session) {
+                session.contextMode = action.payload.contextMode;
             }
         },
         updateMessage: (state, action: PayloadAction<{ sessionId: string; messageId: string; content: string }>) => {
@@ -117,6 +134,37 @@ const sessionSlice = createSlice({
                 state.activeSessionId = nextRootSession?.id ?? null;
             }
         },
+        removeTurn: (state, action: PayloadAction<{ sessionId: string; userMessageId: string }>) => {
+            const { sessionId, userMessageId } = action.payload;
+            const session = state.sessions[sessionId];
+            if (!session) return;
+
+            const userIndex = session.messages.findIndex((m) => m.id === userMessageId && m.role === 'user');
+            if (userIndex < 0) return;
+
+            const userMessage = session.messages[userIndex];
+            const nextMessage = session.messages[userIndex + 1];
+            const hasAssistantReply = nextMessage?.role === 'assistant';
+            const messagesToRemove = [userMessage, ...(hasAssistantReply ? [nextMessage] : [])];
+
+            const subRoots = new Set<string>();
+            messagesToRemove.forEach((msg) => {
+                msg.annotations?.forEach((annotation) => {
+                    subRoots.add(annotation.subSessionId);
+                });
+            });
+
+            const toDelete = new Set<string>();
+            subRoots.forEach((rootId) => {
+                const tree = collectSubSessionTree(state.sessions, rootId);
+                tree.forEach((id) => toDelete.add(id));
+            });
+            toDelete.forEach((id) => {
+                delete state.sessions[id];
+            });
+
+            session.messages.splice(userIndex, hasAssistantReply ? 2 : 1);
+        },
         stopGenerating: () => {
             // handled by saga
         },
@@ -155,10 +203,13 @@ export const {
     spawnSession,
     loadSessions,
     setSessionLoading,
+    updateSessionModel,
+    updateSessionContextMode,
     updateMessage,
     addAnnotation,
     removeAnnotationAndSubSession,
     removeSessionTree,
+    removeTurn,
     stopGenerating,
 } = sessionSlice.actions
 export default sessionSlice.reducer

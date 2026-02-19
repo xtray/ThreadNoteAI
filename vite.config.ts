@@ -1,9 +1,56 @@
-import { defineConfig } from 'vite'
+import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+
+const customProviderProxyPlugin = (): Plugin => ({
+  name: 'threadnote-custom-provider-proxy',
+  configureServer(server) {
+    server.middlewares.use('/api/custom/chat/completions', async (req, res, next) => {
+      if (req.method !== 'POST') return next();
+
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        const rawBody = Buffer.concat(chunks).toString('utf8') || '{}';
+        const payload = JSON.parse(rawBody) as Record<string, any>;
+
+        const rawBaseUrl = typeof payload._threadnoteBaseUrl === 'string' ? payload._threadnoteBaseUrl : '';
+        const baseUrl = rawBaseUrl.trim().replace(/\/+$/, '');
+        if (!baseUrl) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: { message: 'Missing custom provider base URL' } }));
+          return;
+        }
+        delete payload._threadnoteBaseUrl;
+
+        const authorization = req.headers.authorization;
+        const upstream = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authorization ? { Authorization: authorization } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const text = await upstream.text();
+        res.statusCode = upstream.status;
+        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
+        res.end(text);
+      } catch (error: any) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: { message: error?.message || 'Custom provider proxy failed' } }));
+      }
+    });
+  },
+});
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), customProviderProxyPlugin()],
   server: {
     proxy: {
       // MiniMax API
@@ -32,6 +79,20 @@ export default defineConfig({
         target: 'https://api.openai.com/v1',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/openai/, ''),
+        secure: true,
+      },
+      // Anthropic API
+      '/api/anthropic': {
+        target: 'https://api.anthropic.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/anthropic/, ''),
+        secure: true,
+      },
+      // Google Gemini API
+      '/api/google': {
+        target: 'https://generativelanguage.googleapis.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/google/, ''),
         secure: true,
       },
     },

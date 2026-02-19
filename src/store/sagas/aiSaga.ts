@@ -2,7 +2,6 @@ import { takeEvery, put, call, select } from 'redux-saga/effects'
 import { addMessage, Message, setSessionLoading } from '../slices/sessionSlice'
 import { callAI } from '../../utils/api'
 import { RootState } from '..'
-import { getModelById } from '../../utils/models'
 import axios from 'axios'
 
 const controllers = new Map<string, AbortController>();
@@ -27,41 +26,23 @@ function* handleSendMessage(action: { type: string; payload: { sessionId: string
     // 2. Set loading
     yield put(setSessionLoading({ sessionId, isLoading: true }));
 
-    // 3. Resolve which model & apiKey to use
+    // 3. Resolve which model & apiKey to use (after user message is in state)
     const state: RootState = yield select();
     const session = state.sessions.sessions[sessionId];
-    if (!session) return;
+    if (!session) {
+        yield put(setSessionLoading({ sessionId, isLoading: false }));
+        return;
+    }
 
     const modelId = session.modelId;
-    const model = getModelById(modelId);
-    if (!model) {
-        yield put(addMessage({
-            sessionId,
-            message: {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: `❌ Unknown model: ${modelId}`,
-                timestamp: Date.now(),
-            },
-        }));
-        yield put(setSessionLoading({ sessionId, isLoading: false }));
-        return;
-    }
 
-    const apiKey = state.config.apiKeys[model.providerId];
-    if (!apiKey) {
-        yield put(addMessage({
-            sessionId,
-            message: {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: `⚠️ Please configure the **${model.providerId}** API key in Settings first.`,
-                timestamp: Date.now(),
-            },
-        }));
-        yield put(setSessionLoading({ sessionId, isLoading: false }));
-        return;
-    }
+    const messagesForAI = (
+        session.parentId !== null
+        && session.contextMode === 'keep'
+        && Array.isArray(session.mainContextSnapshotMessages)
+    )
+        ? [...session.mainContextSnapshotMessages, ...session.messages]
+        : session.messages;
 
     // 4. Call AI
     const controller = new AbortController();
@@ -70,8 +51,11 @@ function* handleSendMessage(action: { type: string; payload: { sessionId: string
         const aiResponse: string = yield call(
             callAI,
             modelId,
-            [...session.messages, userMessage],
-            apiKey,
+            messagesForAI,
+            {
+                apiKeys: state.config.apiKeys,
+                customProviders: state.config.customProviders,
+            },
             controller.signal,
         );
 

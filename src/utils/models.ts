@@ -14,6 +14,8 @@ export interface Model {
     displayName: string;
 }
 
+export const DEFAULT_MODEL_ID = 'MiniMax-M2.5';
+
 // ─── Providers ───────────────────────────────────────────────
 export const SUPPORTED_PROVIDERS: ModelProvider[] = [
     {
@@ -48,6 +50,22 @@ export const SUPPORTED_PROVIDERS: ModelProvider[] = [
         authHeader: 'Authorization',
         authPrefix: 'Bearer ',
     },
+    {
+        id: 'anthropic',
+        name: 'Anthropic',
+        baseUrl: 'https://api.anthropic.com',
+        proxyPath: '/api/anthropic',
+        authHeader: 'x-api-key',
+        authPrefix: '',
+    },
+    {
+        id: 'google',
+        name: 'Google',
+        baseUrl: 'https://generativelanguage.googleapis.com',
+        proxyPath: '/api/google',
+        authHeader: 'x-goog-api-key',
+        authPrefix: '',
+    },
 ];
 
 // ─── Models ──────────────────────────────────────────────────
@@ -65,9 +83,17 @@ export const AVAILABLE_MODELS: Model[] = [
     { id: 'deepseek-chat', providerId: 'deepseek', name: 'deepseek-chat', displayName: 'DeepSeek Chat' },
     { id: 'deepseek-reasoner', providerId: 'deepseek', name: 'deepseek-reasoner', displayName: 'DeepSeek Reasoner' },
 
-    // OpenAI
-    { id: 'gpt-4-turbo', providerId: 'openai', name: 'gpt-4-turbo', displayName: 'GPT-4 Turbo' },
-    { id: 'gpt-3.5-turbo', providerId: 'openai', name: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo' },
+    // OpenAI (ChatGPT)
+    { id: 'gpt-4o', providerId: 'openai', name: 'gpt-4o', displayName: 'ChatGPT 4o' },
+    { id: 'gpt-4o-mini', providerId: 'openai', name: 'gpt-4o-mini', displayName: 'ChatGPT 4o Mini' },
+
+    // Anthropic
+    { id: 'claude-3-5-sonnet-latest', providerId: 'anthropic', name: 'claude-3-5-sonnet-latest', displayName: 'Claude 3.5 Sonnet' },
+    { id: 'claude-3-5-haiku-latest', providerId: 'anthropic', name: 'claude-3-5-haiku-latest', displayName: 'Claude 3.5 Haiku' },
+
+    // Google Gemini
+    { id: 'gemini-1.5-pro-latest', providerId: 'google', name: 'gemini-1.5-pro-latest', displayName: 'Gemini 1.5 Pro' },
+    { id: 'gemini-1.5-flash-latest', providerId: 'google', name: 'gemini-1.5-flash-latest', displayName: 'Gemini 1.5 Flash' },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────

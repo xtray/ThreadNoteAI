@@ -1,0 +1,88 @@
+flowchart LR
+  %% =========================
+  %% ThreadNote AI Architecture
+  %% =========================
+
+  subgraph UI[UI Layer]
+    Main[main.tsx]
+    App[App.tsx]
+    Chat[ChatContainer.tsx]
+    MsgItem[MessageItem.tsx]
+    MsgContent[MessageContent.tsx]
+    Overlay[FloatingOverlay.tsx]
+    Notebook[NotebookViewer.tsx]
+    Settings[SettingsPanel.tsx]
+  end
+
+  subgraph State[Redux Store Layer]
+    Store[store/index.ts]
+    SessionSlice[sessionSlice]
+    NotesSlice[notesSlice]
+    ConfigSlice[configSlice]
+  end
+
+  subgraph Saga[Saga Layer]
+    RootSaga[rootSaga]
+    AISaga[aiSaga]
+    PersistSaga[persistenceSaga]
+  end
+
+  subgraph Integration[Integration Layer]
+    API[utils/api.ts]
+    Models[utils/models.ts]
+    DB[utils/db.ts]
+    ViteProxy[vite.config.ts proxy]
+    Browser[(IndexedDB + localStorage)]
+    Providers[(LLM Providers)]
+  end
+
+  %% Boot
+  Main --> App
+  Main --> Store
+  Store --> RootSaga
+  RootSaga --> AISaga
+  RootSaga --> PersistSaga
+
+  %% UI composition
+  App --> Chat
+  App --> Notebook
+  App --> Settings
+  Chat --> MsgItem
+  MsgItem --> MsgContent
+  MsgItem --> Overlay
+  Overlay --> MsgContent
+
+  %% UI to Redux actions
+  App -- create/load/clear/select --> SessionSlice
+  App -- load/upsert/select notes --> NotesSlice
+  App -- settings open/close --> ConfigSlice
+  Chat -- send/stop --> SessionSlice
+  Overlay -- send/stop --> SessionSlice
+  MsgItem -- spawn/add/remove turn --> SessionSlice
+  MsgItem -- add excerpt to note --> NotesSlice
+  Overlay -- add excerpt to note --> NotesSlice
+  Notebook -- edit note --> NotesSlice
+  Settings -- set API/model config --> ConfigSlice
+
+  %% Sagas observe actions
+  SessionSlice -- actions --> AISaga
+  SessionSlice -- mutations --> PersistSaga
+  NotesSlice -- mutations --> PersistSaga
+
+  %% AI request path
+  AISaga --> Models
+  AISaga --> API
+  API --> Models
+  API --> ViteProxy
+  ViteProxy --> Providers
+  AISaga -- add assistant message --> SessionSlice
+
+  %% Persistence path
+  PersistSaga --> DB
+  App -- startup load --> DB
+  DB --> Browser
+  ConfigSlice --> Browser
+
+  %% Note import/export path
+  App -- export/import notes --> Browser
+  App -- loadNotes(upsert/replace) --> NotesSlice

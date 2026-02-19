@@ -3,6 +3,7 @@ import createSagaMiddleware from 'redux-saga'
 import { rootSaga } from './rootSaga'
 import sessionReducer from './slices/sessionSlice'
 import configReducer from './slices/configSlice'
+import notesReducer from './slices/notesSlice'
 
 const sagaMiddleware = createSagaMiddleware()
 
@@ -10,6 +11,7 @@ export const store = configureStore({
     reducer: {
         sessions: sessionReducer,
         config: configReducer,
+        notes: notesReducer,
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware({ thunk: false }).concat(sagaMiddleware),

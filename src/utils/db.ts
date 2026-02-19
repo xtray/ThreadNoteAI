@@ -1,231 +1,256 @@
-import initSqlJs from 'sql.js';
 import { ChatSession, Message } from '../store/slices/sessionSlice';
+import { Note } from '../store/slices/notesSlice';
 
-let db: any = null;
-const DB_STORAGE_KEY = 'wrapperai_sqlite_b64';
+const DB_NAME = 'threadnote-ai-indexeddb';
+const DB_VERSION = 2;
+const SESSIONS_STORE = 'sessions';
+const MESSAGES_STORE = 'messages';
+const META_STORE = 'meta';
+const NOTES_STORE = 'notes';
 
-export const initDB = async () => {
-  if (db) return db;
-  const SQL = await initSqlJs({
-    locateFile: (file: string) => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
+interface StoredSession {
+  id: string;
+  parentId: string | null;
+  anchorText: string | null;
+  anchorMessageId: string | null;
+  modelId: string;
+  contextMode?: 'new' | 'keep';
+  mainContextSnapshotMessages?: Message[];
+}
+
+interface StoredMessage extends Message {
+  sessionId: string;
+}
+
+type StoredNote = Note;
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+const requestToPromise = <T>(request: IDBRequest<T>) =>
+  new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
   });
-  const saved = localStorage.getItem(DB_STORAGE_KEY);
-  if (saved) {
-    try {
-      const binary = base64ToUint8Array(saved);
-      db = new SQL.Database(binary);
-    } catch {
-      localStorage.removeItem(DB_STORAGE_KEY);
-      db = new SQL.Database();
-    }
-  } else {
-    db = new SQL.Database();
-  }
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      parentId TEXT,
-      anchorText TEXT,
-      anchorMessageId TEXT,
-      modelId TEXT
-    );
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      sessionId TEXT,
-      role TEXT,
-      content TEXT,
-      timestamp INTEGER,
-      annotations TEXT DEFAULT '[]',
-      FOREIGN KEY(sessionId) REFERENCES sessions(id)
-    );
-    CREATE TABLE IF NOT EXISTS meta (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
-  `);
-
-  // Backward-compatible migration for older DBs.
-  try {
-    db.run(`ALTER TABLE messages ADD COLUMN annotations TEXT DEFAULT '[]';`);
-  } catch {
-    // ignore - column already exists
-  }
-
-  persistDB();
-  return db;
-};
-
-const persistDB = () => {
-  if (!db) return;
-  try {
-    const data = db.export() as Uint8Array;
-    localStorage.setItem(DB_STORAGE_KEY, uint8ArrayToBase64(data));
-  } catch {
-    // ignore storage failures
-  }
-};
-
-const uint8ArrayToBase64 = (bytes: Uint8Array) => {
-  let binary = '';
-  bytes.forEach((b) => {
-    binary += String.fromCharCode(b);
+const transactionDone = (tx: IDBTransaction) =>
+  new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+    tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
   });
-  return btoa(binary);
-};
 
-const base64ToUint8Array = (base64: string) => {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
+const openDB = () =>
+  new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
+        db.createObjectStore(SESSIONS_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
+        const messages = db.createObjectStore(MESSAGES_STORE, { keyPath: 'id' });
+        messages.createIndex('sessionId', 'sessionId', { unique: false });
+        messages.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(META_STORE)) {
+        db.createObjectStore(META_STORE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(NOTES_STORE)) {
+        const notes = db.createObjectStore(NOTES_STORE, { keyPath: 'id' });
+        notes.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Failed to open IndexedDB'));
+  });
+
+const getDB = async () => {
+  if (!dbPromise) {
+    dbPromise = openDB();
   }
-  return bytes;
+  return dbPromise;
 };
 
-export const saveSession = (session: ChatSession) => {
-  if (!db) return;
-  db.run(
-    "INSERT OR REPLACE INTO sessions (id, parentId, anchorText, anchorMessageId, modelId) VALUES (?, ?, ?, ?, ?)",
-    [session.id, session.parentId, session.anchorText, session.anchorMessageId, session.modelId]
-  );
-  persistDB();
+export const initDB = async () => getDB();
+
+export const saveSession = async (session: ChatSession) => {
+  const db = await getDB();
+  const tx = db.transaction(SESSIONS_STORE, 'readwrite');
+  const store = tx.objectStore(SESSIONS_STORE);
+  const record: StoredSession = {
+    id: session.id,
+    parentId: session.parentId,
+    anchorText: session.anchorText,
+    anchorMessageId: session.anchorMessageId,
+    modelId: session.modelId,
+    contextMode: session.contextMode,
+    mainContextSnapshotMessages: session.mainContextSnapshotMessages || [],
+  };
+  store.put(record);
+  await transactionDone(tx);
 };
 
-export const saveMessage = (sessionId: string, message: Message) => {
-  if (!db) return;
-  db.run(
-    "INSERT OR REPLACE INTO messages (id, sessionId, role, content, timestamp, annotations) VALUES (?, ?, ?, ?, ?, ?)",
-    [
-      message.id,
-      sessionId,
-      message.role,
-      message.content,
-      message.timestamp,
-      JSON.stringify(message.annotations || []),
-    ]
-  );
-  persistDB();
+export const saveMessage = async (sessionId: string, message: Message) => {
+  const db = await getDB();
+  const tx = db.transaction(MESSAGES_STORE, 'readwrite');
+  const store = tx.objectStore(MESSAGES_STORE);
+  const record: StoredMessage = {
+    ...message,
+    sessionId,
+    annotations: message.annotations || [],
+  };
+  store.put(record);
+  await transactionDone(tx);
 };
 
-export const saveActiveSessionId = (sessionId: string | null) => {
-  if (!db) return;
+export const saveActiveSessionId = async (sessionId: string | null) => {
+  const db = await getDB();
+  const tx = db.transaction(META_STORE, 'readwrite');
+  const store = tx.objectStore(META_STORE);
   if (sessionId) {
-    db.run(
-      "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-      ['activeSessionId', sessionId]
-    );
+    store.put({ key: 'activeSessionId', value: sessionId });
   } else {
-    db.run("DELETE FROM meta WHERE key = 'activeSessionId'");
+    store.delete('activeSessionId');
   }
-  persistDB();
+  await transactionDone(tx);
 };
 
-export const replaceAllSessionsData = (
+export const replaceAllSessionsData = async (
   sessions: Record<string, ChatSession>,
   activeSessionId: string | null
 ) => {
-  if (!db) return;
+  const db = await getDB();
+  const tx = db.transaction([SESSIONS_STORE, MESSAGES_STORE, META_STORE], 'readwrite');
+  const sessionsStore = tx.objectStore(SESSIONS_STORE);
+  const messagesStore = tx.objectStore(MESSAGES_STORE);
+  const metaStore = tx.objectStore(META_STORE);
 
-  db.run("DELETE FROM messages");
-  db.run("DELETE FROM sessions");
-  db.run("DELETE FROM meta");
+  sessionsStore.clear();
+  messagesStore.clear();
+  metaStore.clear();
 
   Object.values(sessions).forEach((session) => {
-    db.run(
-      "INSERT OR REPLACE INTO sessions (id, parentId, anchorText, anchorMessageId, modelId) VALUES (?, ?, ?, ?, ?)",
-      [session.id, session.parentId, session.anchorText, session.anchorMessageId, session.modelId]
-    );
+    sessionsStore.put({
+      id: session.id,
+      parentId: session.parentId,
+      anchorText: session.anchorText,
+      anchorMessageId: session.anchorMessageId,
+      modelId: session.modelId,
+      contextMode: session.contextMode,
+      mainContextSnapshotMessages: session.mainContextSnapshotMessages || [],
+    } as StoredSession);
+
     session.messages.forEach((message) => {
-      db.run(
-        "INSERT OR REPLACE INTO messages (id, sessionId, role, content, timestamp, annotations) VALUES (?, ?, ?, ?, ?, ?)",
-        [
-          message.id,
-          session.id,
-          message.role,
-          message.content,
-          message.timestamp,
-          JSON.stringify(message.annotations || []),
-        ]
-      );
+      messagesStore.put({
+        ...message,
+        sessionId: session.id,
+        annotations: message.annotations || [],
+      } as StoredMessage);
     });
   });
 
   if (activeSessionId) {
-    db.run(
-      "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-      ['activeSessionId', activeSessionId]
-    );
+    metaStore.put({ key: 'activeSessionId', value: activeSessionId });
   }
 
-  persistDB();
+  await transactionDone(tx);
 };
 
 export const resetSessionDB = async () => {
-  localStorage.removeItem(DB_STORAGE_KEY);
-  db = null;
-  try {
-    await initDB();
-  } catch {
-    // If re-init fails, UI state has already been cleared by caller.
-  }
+  const db = await getDB();
+  const tx = db.transaction([SESSIONS_STORE, MESSAGES_STORE, META_STORE], 'readwrite');
+  tx.objectStore(SESSIONS_STORE).clear();
+  tx.objectStore(MESSAGES_STORE).clear();
+  tx.objectStore(META_STORE).clear();
+  await transactionDone(tx);
 };
 
-export const loadAllSessions = (): { sessions: Record<string, ChatSession>; activeSessionId: string | null } => {
-  if (!db) return { sessions: {}, activeSessionId: null };
+export const loadAllSessions = async (): Promise<{ sessions: Record<string, ChatSession>; activeSessionId: string | null }> => {
+  const db = await getDB();
+  const tx = db.transaction([SESSIONS_STORE, MESSAGES_STORE, META_STORE], 'readonly');
+  const sessionsStore = tx.objectStore(SESSIONS_STORE);
+  const messagesStore = tx.objectStore(MESSAGES_STORE);
+  const metaStore = tx.objectStore(META_STORE);
+
+  const storedSessions = await requestToPromise<StoredSession[]>(sessionsStore.getAll());
+  const storedMessages = await requestToPromise<StoredMessage[]>(messagesStore.getAll());
+  const activeMeta = await requestToPromise<{ key: string; value: string } | undefined>(
+    metaStore.get('activeSessionId')
+  );
 
   const sessions: Record<string, ChatSession> = {};
+  storedSessions.forEach((s) => {
+    sessions[s.id] = {
+      id: s.id,
+      parentId: s.parentId,
+      anchorText: s.anchorText,
+      anchorMessageId: s.anchorMessageId,
+      modelId: s.modelId,
+      isLoading: false,
+      messages: [],
+      contextMode: s.contextMode,
+      mainContextSnapshotMessages: s.mainContextSnapshotMessages || [],
+    };
+  });
 
-  const sessionRows = db.exec("SELECT id, parentId, anchorText, anchorMessageId, modelId FROM sessions");
-  if (sessionRows[0]) {
-    const { values } = sessionRows[0];
-    values.forEach((row: any[]) => {
-      const [id, parentId, anchorText, anchorMessageId, modelId] = row;
-      sessions[id] = {
-        id,
-        parentId,
-        anchorText,
-        anchorMessageId,
-        modelId,
-        isLoading: false,
-        messages: [],
-      };
-    });
-  }
-
-  const messageRows = db.exec(
-    "SELECT id, sessionId, role, content, timestamp, annotations FROM messages ORDER BY timestamp ASC"
-  );
-  if (messageRows[0]) {
-    const { values } = messageRows[0];
-    values.forEach((row: any[]) => {
-      const [id, sessionId, role, content, timestamp, annotationsRaw] = row;
-      if (!sessions[sessionId]) return;
-      let annotations = [];
-      try {
-        annotations = annotationsRaw ? JSON.parse(annotationsRaw) : [];
-      } catch {
-        annotations = [];
-      }
-      sessions[sessionId].messages.push({
-        id,
-        role,
-        content,
-        timestamp,
-        annotations,
+  storedMessages
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .forEach((m) => {
+      if (!sessions[m.sessionId]) return;
+      sessions[m.sessionId].messages.push({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        annotations: m.annotations || [],
       });
     });
-  }
 
-  let activeSessionId: string | null = null;
-  const metaRows = db.exec("SELECT value FROM meta WHERE key = 'activeSessionId'");
-  if (metaRows[0]?.values?.[0]?.[0]) {
-    activeSessionId = metaRows[0].values[0][0] as string;
-  }
-
+  let activeSessionId = activeMeta?.value ?? null;
   if (activeSessionId && !sessions[activeSessionId]) {
     activeSessionId = null;
   }
 
+  await transactionDone(tx);
   return { sessions, activeSessionId };
+};
+
+export const saveNote = async (note: Note) => {
+  const db = await getDB();
+  const tx = db.transaction(NOTES_STORE, 'readwrite');
+  tx.objectStore(NOTES_STORE).put(note as StoredNote);
+  await transactionDone(tx);
+};
+
+export const replaceAllNotesData = async (notes: Record<string, Note>) => {
+  const db = await getDB();
+  const tx = db.transaction(NOTES_STORE, 'readwrite');
+  const notesStore = tx.objectStore(NOTES_STORE);
+  notesStore.clear();
+  Object.values(notes).forEach((note) => {
+    notesStore.put(note as StoredNote);
+  });
+  await transactionDone(tx);
+};
+
+export const resetNotesDB = async () => {
+  const db = await getDB();
+  const tx = db.transaction(NOTES_STORE, 'readwrite');
+  tx.objectStore(NOTES_STORE).clear();
+  await transactionDone(tx);
+};
+
+export const loadAllNotes = async (): Promise<Record<string, Note>> => {
+  const db = await getDB();
+  const tx = db.transaction(NOTES_STORE, 'readonly');
+  const notesStore = tx.objectStore(NOTES_STORE);
+  const notes = await requestToPromise<StoredNote[]>(notesStore.getAll());
+  await transactionDone(tx);
+
+  return notes.reduce<Record<string, Note>>((acc, note) => {
+    acc[note.id] = note;
+    return acc;
+  }, {});
 };
