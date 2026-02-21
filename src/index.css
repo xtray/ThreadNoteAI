@@ -244,31 +244,51 @@ html,
     display: flex;
 }
 
-.notebook-render-view {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 18px 22px 26px;
-    cursor: text;
-    scrollbar-gutter: stable;
-}
-
-.notebook-edit-input {
+.notebook-block-list {
     flex: 1;
     width: 100%;
     min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 18px 22px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    scrollbar-gutter: stable;
+}
+
+.notebook-block {
+    border: none;
+    background: transparent;
+}
+
+.notebook-block.is-active {
+    border: none;
+    background: transparent;
+}
+
+.notebook-render-view {
+    padding: 0;
+    cursor: text;
+}
+
+.notebook-render-view:hover {
+    background: transparent;
+}
+
+.notebook-edit-input {
+    display: block;
+    width: 100%;
+    min-height: 1.8rem;
     resize: none;
     border: none;
     outline: none;
-    background: #ffffff;
+    background: transparent;
     color: var(--text-primary);
-    padding: 18px 22px 26px;
+    padding: 0;
     font: 500 1rem/1.65 var(--font-family);
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     white-space: pre-wrap;
-    scrollbar-gutter: stable;
 }
 
 .notebook-edit-input::selection {

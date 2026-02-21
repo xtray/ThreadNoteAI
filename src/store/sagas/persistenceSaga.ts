@@ -109,6 +109,7 @@ export function* persistenceSaga() {
     yield takeEvery('sessions/spawnSession' as any, persistSpawnedSession as any);
     yield takeEvery('sessions/addMessage' as any, persistMessage as any);
     yield takeEvery('sessions/addAnnotation' as any, persistAnnotatedMessage as any);
+    yield takeEvery('sessions/updateMessage' as any, persistAnnotatedMessage as any);
     yield takeEvery('sessions/updateSessionModel' as any, persistSessionModelChange as any);
     yield takeEvery('sessions/updateSessionContextMode' as any, persistSessionModelChange as any);
     yield takeEvery('sessions/removeAnnotationAndSubSession' as any, persistRemovedSubSession as any);

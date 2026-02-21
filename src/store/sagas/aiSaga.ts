@@ -1,8 +1,9 @@
 import { takeEvery, put, call, select } from 'redux-saga/effects'
-import { addMessage, Message, setSessionLoading } from '../slices/sessionSlice'
-import { callAI } from '../../utils/api'
+import { addMessage, Message, setSessionLoading, updateMessage } from '../slices/sessionSlice'
+import { callAIStream } from '../../utils/api'
 import { RootState } from '..'
 import axios from 'axios'
+import { store } from '..'
 
 const controllers = new Map<string, AbortController>();
 
@@ -47,40 +48,61 @@ function* handleSendMessage(action: { type: string; payload: { sessionId: string
     // 4. Call AI
     const controller = new AbortController();
     controllers.set(sessionId, controller);
+    const assistantMessageId = (Date.now() + 1).toString();
+
+    yield put(addMessage({
+        sessionId,
+        message: {
+            id: assistantMessageId,
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+        },
+    }));
+
     try {
-        const aiResponse: string = yield call(
-            callAI,
+        let latestContent = '';
+        yield call(
+            callAIStream,
             modelId,
             messagesForAI,
             {
                 apiKeys: state.config.apiKeys,
                 customProviders: state.config.customProviders,
             },
+            (content: string) => {
+                latestContent = content;
+                store.dispatch(updateMessage({
+                    sessionId,
+                    messageId: assistantMessageId,
+                    content,
+                }));
+            },
             controller.signal,
         );
-
-        const assistantMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: aiResponse,
-            timestamp: Date.now(),
-        };
-
-        yield put(addMessage({ sessionId, message: assistantMessage }));
+        if (!latestContent.trim()) {
+            yield put(updateMessage({
+                sessionId,
+                messageId: assistantMessageId,
+                content: '(No content returned)',
+            }));
+        }
     } catch (error: any) {
         const cancelled = axios.isCancel(error)
             || error?.code === 'ERR_CANCELED'
-            || error?.name === 'CanceledError';
+            || error?.name === 'CanceledError'
+            || error?.name === 'AbortError';
         if (cancelled) {
-            yield put(addMessage({
-                sessionId,
-                message: {
-                    id: (Date.now() + 2).toString(),
-                    role: 'assistant',
+            const latestState: RootState = yield select();
+            const latestSession = latestState.sessions.sessions[sessionId];
+            const assistantMsg = latestSession?.messages.find((m) => m.id === assistantMessageId);
+            if (!assistantMsg?.content?.trim()) {
+                yield put(updateMessage({
+                    sessionId,
+                    messageId: assistantMessageId,
                     content: '⏹️ Response stopped.',
-                    timestamp: Date.now(),
-                },
-            }));
+                }));
+            }
             return;
         }
 
@@ -89,15 +111,26 @@ function* handleSendMessage(action: { type: string; payload: { sessionId: string
             || error?.message
             || 'Unknown error';
 
-        yield put(addMessage({
-            sessionId,
-            message: {
-                id: (Date.now() + 2).toString(),
-                role: 'assistant',
+        const latestState: RootState = yield select();
+        const latestSession = latestState.sessions.sessions[sessionId];
+        const assistantMsg = latestSession?.messages.find((m) => m.id === assistantMessageId);
+        if (!assistantMsg) {
+            yield put(addMessage({
+                sessionId,
+                message: {
+                    id: (Date.now() + 2).toString(),
+                    role: 'assistant',
+                    content: `❌ Request failed: ${errMsg}`,
+                    timestamp: Date.now(),
+                },
+            }));
+        } else {
+            yield put(updateMessage({
+                sessionId,
+                messageId: assistantMessageId,
                 content: `❌ Request failed: ${errMsg}`,
-                timestamp: Date.now(),
-            },
-        }));
+            }));
+        }
     } finally {
         controllers.delete(sessionId);
         yield put(setSessionLoading({ sessionId, isLoading: false }));

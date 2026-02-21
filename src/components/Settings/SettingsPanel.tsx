@@ -8,6 +8,7 @@ import {
     removeCustomProviderModel,
     setApiKey,
     setMainModel,
+    setSubSessionContextMode,
     setSubModel,
     toggleSettings,
     updateCustomProvider,
@@ -239,6 +240,17 @@ const SettingsPanel: React.FC = () => {
                                     ))}
                                 </optgroup>
                             )}
+                        </select>
+                    </div>
+
+                    <div className="settings-field">
+                        <label>Sub-Session Context Mode</label>
+                        <select
+                            value={config.subSessionContextMode}
+                            onChange={(e) => dispatch(setSubSessionContextMode(e.target.value as 'new' | 'keep'))}
+                        >
+                            <option value="new">New</option>
+                            <option value="keep">Keep</option>
                         </select>
                     </div>
                 </section>

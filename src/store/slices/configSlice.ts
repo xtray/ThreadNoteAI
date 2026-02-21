@@ -11,6 +11,7 @@ export interface ConfigState {
     apiKeys: Record<string, string>;   // providerId → apiKey
     mainModelId: string;               // default model for main thread
     subModelId: string;                // default model for sub-thread
+    subSessionContextMode: 'new' | 'keep';
     customProviders: CustomProviderConfig[];
     settingsOpen: boolean;
 }
@@ -31,6 +32,7 @@ const initialState: ConfigState = {
     apiKeys: saved.apiKeys ?? {},
     mainModelId: saved.mainModelId ?? DEFAULT_MODEL_ID,
     subModelId: saved.subModelId ?? DEFAULT_MODEL_ID,
+    subSessionContextMode: saved.subSessionContextMode ?? 'new',
     customProviders: sanitizeCustomProviders(saved.customProviders),
     settingsOpen: false,
 };
@@ -65,6 +67,10 @@ const configSlice = createSlice({
         },
         setSubModel: (state, action: PayloadAction<string>) => {
             state.subModelId = action.payload;
+            persistConfig(state);
+        },
+        setSubSessionContextMode: (state, action: PayloadAction<'new' | 'keep'>) => {
+            state.subSessionContextMode = action.payload;
             persistConfig(state);
         },
         addCustomProvider: (state, action: PayloadAction<{ id?: string } | undefined>) => {
@@ -137,6 +143,7 @@ const configSlice = createSlice({
             if (loaded.apiKeys) state.apiKeys = loaded.apiKeys;
             if (loaded.mainModelId) state.mainModelId = loaded.mainModelId;
             if (loaded.subModelId) state.subModelId = loaded.subModelId;
+            if (loaded.subSessionContextMode) state.subSessionContextMode = loaded.subSessionContextMode;
             state.customProviders = sanitizeCustomProviders(loaded.customProviders);
             ensureSelectedModels(state);
         },
@@ -145,11 +152,12 @@ const configSlice = createSlice({
 
 function persistConfig(state: ConfigState) {
     try {
-        const { apiKeys, mainModelId, subModelId, customProviders } = state;
+        const { apiKeys, mainModelId, subModelId, subSessionContextMode, customProviders } = state;
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
             apiKeys,
             mainModelId,
             subModelId,
+            subSessionContextMode,
             customProviders,
         }));
     } catch { /* ignore */ }
@@ -159,6 +167,7 @@ export const {
     setApiKey,
     setMainModel,
     setSubModel,
+    setSubSessionContextMode,
     addCustomProvider,
     updateCustomProvider,
     removeCustomProvider,

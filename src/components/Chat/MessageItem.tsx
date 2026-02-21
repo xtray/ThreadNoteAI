@@ -17,6 +17,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     const CONTEXT_MENU_MARGIN = 10;
     const dispatch = useDispatch();
     const subModelId = useSelector((state: RootState) => state.config.subModelId);
+    const subSessionContextMode = useSelector((state: RootState) => state.config.subSessionContextMode);
     const session = useSelector((state: RootState) => state.sessions.sessions[sessionId]);
     const notes = useSelector((state: RootState) => state.notes.notes);
     const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
@@ -91,7 +92,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             messages: [],
             modelId: subModelId,
             isLoading: false,
-            contextMode: 'new',
+            contextMode: subSessionContextMode,
             mainContextSnapshotMessages,
         }));
 

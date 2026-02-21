@@ -1,5 +1,6 @@
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import { Readable } from 'node:stream'
 
 const customProviderProxyPlugin = (): Plugin => ({
   name: 'threadnote-custom-provider-proxy',
@@ -34,11 +35,18 @@ const customProviderProxyPlugin = (): Plugin => ({
           },
           body: JSON.stringify(payload),
         });
-
-        const text = await upstream.text();
         res.statusCode = upstream.status;
         res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
-        res.end(text);
+        const cacheControl = upstream.headers.get('cache-control');
+        if (cacheControl) {
+          res.setHeader('Cache-Control', cacheControl);
+        }
+
+        if (upstream.body) {
+          Readable.fromWeb(upstream.body as any).pipe(res);
+          return;
+        }
+        res.end();
       } catch (error: any) {
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json');
@@ -50,6 +58,7 @@ const customProviderProxyPlugin = (): Plugin => ({
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [react(), customProviderProxyPlugin()],
   server: {
     proxy: {
