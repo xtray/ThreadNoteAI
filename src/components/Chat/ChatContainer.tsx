@@ -19,10 +19,44 @@ const ChatContainer: React.FC = () => {
     const [inputText, setInputText] = useState('');
     const [helpOpen, setHelpOpen] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const previousScrollStateRef = useRef<{
+        sessionId: string;
+        messageCount: number;
+        lastMessageId: string | null;
+        lastMessageContent: string;
+        isLoading: boolean;
+    } | null>(null);
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [session?.messages]);
+        if (!session) {
+            previousScrollStateRef.current = null;
+            return;
+        }
+
+        const lastMessage = session.messages[session.messages.length - 1];
+        const nextState = {
+            sessionId: session.id,
+            messageCount: session.messages.length,
+            lastMessageId: lastMessage?.id ?? null,
+            lastMessageContent: lastMessage?.content ?? '',
+            isLoading: session.isLoading,
+        };
+
+        const previous = previousScrollStateRef.current;
+        const sessionChanged = !previous || previous.sessionId !== nextState.sessionId;
+        const messageCountIncreased = !!previous && nextState.messageCount > previous.messageCount;
+        const loadingStarted = !!previous && !previous.isLoading && nextState.isLoading;
+        const loadingMessageUpdated = !!previous
+            && nextState.isLoading
+            && previous.lastMessageId === nextState.lastMessageId
+            && previous.lastMessageContent !== nextState.lastMessageContent;
+
+        if (sessionChanged || messageCountIncreased || loadingStarted || loadingMessageUpdated) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        previousScrollStateRef.current = nextState;
+    }, [session?.id, session?.isLoading, session?.messages]);
 
     const handleSend = () => {
         if (!inputText.trim() || !activeSessionId || session?.isLoading) return;

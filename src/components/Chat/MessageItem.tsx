@@ -77,6 +77,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         e.stopPropagation();
         if (!selectedText.trim()) return;
         if (!session) return;
+        const messageListEl = contentRef.current?.closest('.message-list') as HTMLElement | null;
+        const preservedScrollTop = messageListEl?.scrollTop;
         const subSessionId = `sub-${Date.now()}`;
         const anchor = selectedText.trim();
         const mainContextSnapshotMessages = session.messages.map((m) => ({
@@ -112,6 +114,16 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
         // Clear browser selection
         window.getSelection()?.removeAllRanges();
+
+        if (messageListEl && typeof preservedScrollTop === 'number') {
+            // Keep viewport stable when annotation markup and overlay mount cause reflow.
+            requestAnimationFrame(() => {
+                messageListEl.scrollTop = preservedScrollTop;
+                requestAnimationFrame(() => {
+                    messageListEl.scrollTop = preservedScrollTop;
+                });
+            });
+        }
     };
 
     const handleOpenSession = (subSessionId: string) => {
@@ -234,6 +246,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                         transform: 'translateX(-50%)',
                         zIndex: 1000,
                     }}
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={handleCreateSubSession}
                 >
                     💬 Sub-session

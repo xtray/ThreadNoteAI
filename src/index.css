@@ -1146,6 +1146,35 @@ html,
     display: flex;
     gap: 6px;
     align-items: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    transition: border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.custom-model-row.is-draggable {
+    cursor: grab;
+}
+
+.custom-model-row.is-dragging {
+    opacity: 0.55;
+}
+
+.custom-model-row.is-drop-target {
+    border-color: var(--accent-color);
+    background: #eff6ff;
+}
+
+.custom-model-drag-handle {
+    color: #94a3b8;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    flex-shrink: 0;
+}
+
+.custom-model-row:not(.is-draggable) .custom-model-drag-handle {
+    opacity: 0.4;
 }
 
 .custom-model-row input {

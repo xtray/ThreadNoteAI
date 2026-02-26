@@ -135,6 +135,26 @@ const configSlice = createSlice({
             ensureSelectedModels(state);
             persistConfig(state);
         },
+        moveCustomProviderModel: (
+            state,
+            action: PayloadAction<{ providerId: string; fromIndex: number; toIndex: number }>
+        ) => {
+            const { providerId, fromIndex, toIndex } = action.payload;
+            const provider = state.customProviders.find((p) => p.id === providerId);
+            if (!provider) return;
+            if (
+                fromIndex < 0 ||
+                toIndex < 0 ||
+                fromIndex >= provider.models.length ||
+                toIndex >= provider.models.length ||
+                fromIndex === toIndex
+            ) {
+                return;
+            }
+            const [movedModel] = provider.models.splice(fromIndex, 1);
+            provider.models.splice(toIndex, 0, movedModel);
+            persistConfig(state);
+        },
         toggleSettings: (state) => {
             state.settingsOpen = !state.settingsOpen;
         },
@@ -174,6 +194,7 @@ export const {
     addCustomProviderModel,
     updateCustomProviderModel,
     removeCustomProviderModel,
+    moveCustomProviderModel,
     toggleSettings,
     loadConfig,
 } = configSlice.actions;

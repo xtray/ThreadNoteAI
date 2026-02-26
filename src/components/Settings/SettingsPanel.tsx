@@ -4,6 +4,7 @@ import { RootState } from '../../store';
 import {
     addCustomProvider,
     addCustomProviderModel,
+    moveCustomProviderModel,
     removeCustomProvider,
     removeCustomProviderModel,
     setApiKey,
@@ -16,18 +17,89 @@ import {
 } from '../../store/slices/configSlice';
 import { SUPPORTED_PROVIDERS, AVAILABLE_MODELS } from '../../utils/models';
 import { getCustomModelOptions } from '../../utils/customModels';
-import { X, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import { X, Eye, EyeOff, Plus, Trash2, GripVertical } from 'lucide-react';
 
 const SettingsPanel: React.FC = () => {
     const dispatch = useDispatch();
     const config = useSelector((state: RootState) => state.config);
     const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+    const [draggingModel, setDraggingModel] = useState<{ providerId: string; index: number } | null>(null);
+    const [dragOverModel, setDragOverModel] = useState<{ providerId: string; index: number } | null>(null);
     const customModels = getCustomModelOptions(config.customProviders);
 
     if (!config.settingsOpen) return null;
 
     const toggleKeyVisibility = (providerId: string) => {
         setVisibleKeys((prev) => ({ ...prev, [providerId]: !prev[providerId] }));
+    };
+
+    const isModelFilled = (modelName: string) => modelName.trim().length > 0;
+
+    const handleModelDragStart = (
+        providerId: string,
+        index: number,
+        modelName: string,
+        event: React.DragEvent<HTMLDivElement>
+    ) => {
+        if (!isModelFilled(modelName)) {
+            event.preventDefault();
+            return;
+        }
+        setDraggingModel({ providerId, index });
+        setDragOverModel(null);
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', `${providerId}:${index}`);
+    };
+
+    const handleModelDragOver = (
+        providerId: string,
+        index: number,
+        modelName: string,
+        event: React.DragEvent<HTMLDivElement>
+    ) => {
+        if (
+            !draggingModel ||
+            draggingModel.providerId !== providerId ||
+            draggingModel.index === index ||
+            !isModelFilled(modelName)
+        ) {
+            return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        if (!dragOverModel || dragOverModel.providerId !== providerId || dragOverModel.index !== index) {
+            setDragOverModel({ providerId, index });
+        }
+    };
+
+    const handleModelDrop = (
+        providerId: string,
+        index: number,
+        modelName: string,
+        event: React.DragEvent<HTMLDivElement>
+    ) => {
+        event.preventDefault();
+        if (
+            !draggingModel ||
+            draggingModel.providerId !== providerId ||
+            draggingModel.index === index ||
+            !isModelFilled(modelName)
+        ) {
+            setDragOverModel(null);
+            return;
+        }
+        dispatch(moveCustomProviderModel({
+            providerId,
+            fromIndex: draggingModel.index,
+            toIndex: index,
+        }));
+        setDraggingModel(null);
+        setDragOverModel(null);
+    };
+
+    const handleModelDragEnd = () => {
+        setDraggingModel(null);
+        setDragOverModel(null);
     };
 
     return (
@@ -152,7 +224,19 @@ const SettingsPanel: React.FC = () => {
                                 <label>Models</label>
                                 <div className="custom-model-list">
                                     {provider.models.map((modelName, index) => (
-                                        <div key={`${provider.id}-${index}`} className="custom-model-row">
+                                        <div
+                                            key={`${provider.id}-${index}`}
+                                            className={`custom-model-row ${isModelFilled(modelName) ? 'is-draggable' : ''} ${dragOverModel?.providerId === provider.id && dragOverModel.index === index ? 'is-drop-target' : ''} ${draggingModel?.providerId === provider.id && draggingModel.index === index ? 'is-dragging' : ''}`}
+                                            draggable={isModelFilled(modelName)}
+                                            onDragStart={(event) => handleModelDragStart(provider.id, index, modelName, event)}
+                                            onDragOver={(event) => handleModelDragOver(provider.id, index, modelName, event)}
+                                            onDrop={(event) => handleModelDrop(provider.id, index, modelName, event)}
+                                            onDragEnd={handleModelDragEnd}
+                                            title={isModelFilled(modelName) ? 'Drag to reorder' : 'Enter model name first'}
+                                        >
+                                            <span className="custom-model-drag-handle" aria-hidden="true">
+                                                <GripVertical size={14} />
+                                            </span>
                                             <input
                                                 type="text"
                                                 value={modelName}

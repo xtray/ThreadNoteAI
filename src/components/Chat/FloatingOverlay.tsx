@@ -33,12 +33,51 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         { x: number; y: number; selectedText: string } | null
     >(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const previousScrollStateRef = useRef<{
+        sessionId: string;
+        messageCount: number;
+        lastMessageId: string | null;
+        lastMessageContent: string;
+        isLoading: boolean;
+    } | null>(null);
     const overlayRef = useRef<HTMLDivElement>(null);
     const resizeStartRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [session?.messages]);
+        if (!session) {
+            previousScrollStateRef.current = null;
+            return;
+        }
+
+        const lastMessage = session.messages[session.messages.length - 1];
+        const nextState = {
+            sessionId: session.id,
+            messageCount: session.messages.length,
+            lastMessageId: lastMessage?.id ?? null,
+            lastMessageContent: lastMessage?.content ?? '',
+            isLoading: session.isLoading,
+        };
+
+        const previous = previousScrollStateRef.current;
+        if (!previous) {
+            previousScrollStateRef.current = nextState;
+            return;
+        }
+
+        const sessionChanged = previous.sessionId !== nextState.sessionId;
+        const messageCountIncreased = !!previous && nextState.messageCount > previous.messageCount;
+        const loadingStarted = !!previous && !previous.isLoading && nextState.isLoading;
+        const loadingMessageUpdated = !!previous
+            && nextState.isLoading
+            && previous.lastMessageId === nextState.lastMessageId
+            && previous.lastMessageContent !== nextState.lastMessageContent;
+
+        if ((sessionChanged && nextState.messageCount > 0) || messageCountIncreased || loadingStarted || loadingMessageUpdated) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        previousScrollStateRef.current = nextState;
+    }, [session?.id, session?.isLoading, session?.messages]);
 
     useEffect(() => {
         if (!session) return;
