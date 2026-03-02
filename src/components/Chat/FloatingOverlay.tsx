@@ -5,7 +5,7 @@ import { X, Send, Square, Maximize2, Minimize2 } from 'lucide-react';
 import MessageContent from './MessageContent';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
 import { createPortal } from 'react-dom';
-import { updateSessionContextMode, updateSessionModel } from '../../store/slices/sessionSlice';
+import { removeTurn, updateSessionContextMode, updateSessionModel } from '../../store/slices/sessionSlice';
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
 
 interface FloatingOverlayProps {
@@ -30,7 +30,9 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const [size, setSize] = useState({ width: 380, height: 500 });
     const [isResizing, setIsResizing] = useState(false);
     const [contextMenu, setContextMenu] = useState<
-        { x: number; y: number; selectedText: string } | null
+        | { x: number; y: number; type: 'add-note'; selectedText: string; turnUserMessageId: string | null }
+        | { x: number; y: number; type: 'delete-turn'; turnUserMessageId: string }
+        | null
     >(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const previousScrollStateRef = useRef<{
@@ -41,6 +43,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         isLoading: boolean;
     } | null>(null);
     const overlayRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
     const resizeStartRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
     useEffect(() => {
@@ -93,6 +96,13 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
             setPendingSentText(null);
         }
     }, [session, pendingSentText]);
+
+    useEffect(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+    }, [inputText]);
 
     useEffect(() => {
         const closeOnLeftMouseDown = (event: MouseEvent) => {
@@ -163,6 +173,20 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         });
     };
 
+    const insertNewLineAtCursor = () => {
+        const el = inputRef.current;
+        if (!el) return;
+        const start = el.selectionStart ?? inputText.length;
+        const end = el.selectionEnd ?? inputText.length;
+        const nextText = `${inputText.slice(0, start)}\n${inputText.slice(end)}`;
+        setInputText(nextText);
+        requestAnimationFrame(() => {
+            el.focus();
+            el.selectionStart = start + 1;
+            el.selectionEnd = start + 1;
+        });
+    };
+
     const getSessionTitle = useCallback(() => {
         if (!session) return 'Sub-session';
         const firstUser = session.messages.find((m) => m.role === 'user' && m.content.trim().length > 0);
@@ -203,7 +227,22 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         window.getSelection()?.removeAllRanges();
     }, [dispatch, getSessionTitle, notes, session]);
 
-    const handleAssistantContextMenu = useCallback((e: React.MouseEvent<HTMLElement>, excerpt: string) => {
+    const findTurnUserMessageId = useCallback((messageIndex: number) => {
+        if (!session) return null;
+        for (let i = messageIndex; i >= 0; i -= 1) {
+            const current = session.messages[i];
+            if (current?.role === 'user') {
+                return current.id;
+            }
+        }
+        return null;
+    }, [session]);
+
+    const handleAssistantContextMenu = useCallback((
+        e: React.MouseEvent<HTMLElement>,
+        excerpt: string,
+        turnUserMessageId: string | null
+    ) => {
         if (!excerpt) return;
 
         const maxX = window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN;
@@ -213,11 +252,17 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         setContextMenu({
             x: adjustedX,
             y: e.clientY,
+            type: 'add-note',
             selectedText: excerpt,
+            turnUserMessageId,
         });
     }, []);
 
-    const handleAssistantMessageContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>, messageContent: string) => {
+    const handleAssistantMessageContextMenu = useCallback((
+        e: React.MouseEvent<HTMLDivElement>,
+        messageContent: string,
+        messageIndex: number
+    ) => {
         const target = e.target as HTMLElement;
         // Let annotation marker keep its own context menu behavior.
         if (target.closest('.annotation-highlight')) return;
@@ -234,10 +279,14 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
             : messageContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim() || messageContent.trim();
         if (!excerpt) return;
 
-        handleAssistantContextMenu(e, excerpt);
-    }, [handleAssistantContextMenu]);
+        handleAssistantContextMenu(e, excerpt, findTurnUserMessageId(messageIndex));
+    }, [findTurnUserMessageId, handleAssistantContextMenu]);
 
-    const handleAssistantMessageMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>, messageContent: string) => {
+    const handleAssistantMessageMouseUp = useCallback((
+        e: React.MouseEvent<HTMLDivElement>,
+        messageContent: string,
+        messageIndex: number
+    ) => {
         const target = e.target as HTMLElement;
         if (target.closest('.annotation-highlight')) return;
 
@@ -259,9 +308,27 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         setContextMenu({
             x: adjustedX,
             y: Math.max(CONTEXT_MENU_MARGIN, rect.bottom + 8),
+            type: 'add-note',
             selectedText: excerpt,
+            turnUserMessageId: findTurnUserMessageId(messageIndex),
         });
-    }, []);
+    }, [findTurnUserMessageId]);
+
+    const handleUserMessageContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>, messageIndex: number) => {
+        const turnUserMessageId = findTurnUserMessageId(messageIndex);
+        if (!turnUserMessageId) return;
+
+        const maxX = window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN;
+        const adjustedX = Math.max(CONTEXT_MENU_MARGIN, Math.min(e.clientX, maxX));
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({
+            x: adjustedX,
+            y: e.clientY,
+            type: 'delete-turn',
+            turnUserMessageId,
+        });
+    }, [findTurnUserMessageId]);
 
     if (!session) return null;
 
@@ -375,29 +442,24 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
             </div>
 
             <div className="overlay-messages">
-                {session.messages.map((m) => (
+                {session.messages.map((m, index) => (
                     <div
                         key={m.id}
                         className={`overlay-message ${m.role}`}
                         onContextMenu={
                             m.role === 'assistant'
-                                ? (e) => handleAssistantMessageContextMenu(e, m.content)
-                                : undefined
+                                ? (e) => handleAssistantMessageContextMenu(e, m.content, index)
+                                : (e) => handleUserMessageContextMenu(e, index)
                         }
                         onMouseUp={
                             m.role === 'assistant'
-                                ? (e) => handleAssistantMessageMouseUp(e, m.content)
+                                ? (e) => handleAssistantMessageMouseUp(e, m.content, index)
                                 : undefined
                         }
                     >
                         <MessageContent
                             content={m.content}
                             annotations={m.annotations}
-                            onResponseContextMenu={
-                                m.role === 'assistant'
-                                    ? handleAssistantContextMenu
-                                    : undefined
-                            }
                         />
                     </div>
                 ))}
@@ -410,19 +472,25 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
             </div>
 
             <div className="overlay-input">
-                <input
-                    type="text"
+                <textarea
+                    ref={inputRef}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     onKeyDown={(e) => {
                         if (e.nativeEvent.isComposing) return;
-                        if (e.key === 'Enter') {
+                        if (e.ctrlKey && e.key.toLowerCase() === 'j') {
+                            e.preventDefault();
+                            insertNewLineAtCursor();
+                            return;
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             handleSend();
                         }
                     }}
                     placeholder="Ask about this..."
                     disabled={session.isLoading}
+                    rows={1}
                 />
                 <button
                     className={`overlay-send-btn ${session.isLoading ? 'is-stop' : ''}`}
@@ -446,20 +514,54 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <button
-                        className="note-action"
-                        type="button"
-                        onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                        }}
-                        onClick={() => {
-                            setContextMenu(null);
-                            addToSessionNote(contextMenu.selectedText);
-                        }}
-                    >
-                        Add to note
-                    </button>
+                    {contextMenu.type === 'add-note' ? (
+                        <>
+                            <button
+                                className="note-action"
+                                type="button"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                    setContextMenu(null);
+                                    addToSessionNote(contextMenu.selectedText);
+                                }}
+                            >
+                                Add to note
+                            </button>
+                            {contextMenu.turnUserMessageId && (
+                                <button
+                                    className="danger-action"
+                                    type="button"
+                                    onClick={() => {
+                                        if (!contextMenu.turnUserMessageId) return;
+                                        dispatch(removeTurn({
+                                            sessionId,
+                                            messageId: contextMenu.turnUserMessageId,
+                                        }));
+                                        setContextMenu(null);
+                                    }}
+                                >
+                                    Delete turn
+                                </button>
+                            )}
+                        </>
+                    ) : (
+                        <button
+                            className="danger-action"
+                            type="button"
+                            onClick={() => {
+                                dispatch(removeTurn({
+                                    sessionId,
+                                    messageId: contextMenu.turnUserMessageId,
+                                }));
+                                setContextMenu(null);
+                            }}
+                        >
+                            Delete turn
+                        </button>
+                    )}
                 </div>,
                 document.body
             )}

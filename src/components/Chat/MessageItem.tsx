@@ -272,7 +272,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                             className="danger-action"
                             type="button"
                             onClick={() => {
-                                dispatch(removeTurn({ sessionId, userMessageId: message.id }));
+                                dispatch(removeTurn({ sessionId, messageId: message.id }));
                                 setContextMenu(null);
                             }}
                         >

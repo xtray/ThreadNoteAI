@@ -18,6 +18,7 @@ const ChatContainer: React.FC = () => {
 
     const [inputText, setInputText] = useState('');
     const [helpOpen, setHelpOpen] = useState(false);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const previousScrollStateRef = useRef<{
         sessionId: string;
@@ -58,6 +59,13 @@ const ChatContainer: React.FC = () => {
         previousScrollStateRef.current = nextState;
     }, [session?.id, session?.isLoading, session?.messages]);
 
+    useEffect(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    }, [inputText]);
+
     const handleSend = () => {
         if (!inputText.trim() || !activeSessionId || session?.isLoading) return;
 
@@ -66,6 +74,20 @@ const ChatContainer: React.FC = () => {
             payload: { sessionId: activeSessionId, content: inputText }
         });
         setInputText('');
+    };
+
+    const insertNewLineAtCursor = () => {
+        const el = inputRef.current;
+        if (!el) return;
+        const start = el.selectionStart ?? inputText.length;
+        const end = el.selectionEnd ?? inputText.length;
+        const nextText = `${inputText.slice(0, start)}\n${inputText.slice(end)}`;
+        setInputText(nextText);
+        requestAnimationFrame(() => {
+            el.focus();
+            el.selectionStart = start + 1;
+            el.selectionEnd = start + 1;
+        });
     };
 
     const handleStop = () => {
@@ -112,7 +134,7 @@ const ChatContainer: React.FC = () => {
                         <h3>Basic Operations</h3>
                         <ul>
                             <li>Click Start New Chat to create a new conversation.</li>
-                            <li>Type a prompt and press Enter (or Send) to talk with the AI.</li>
+                            <li>Press Enter to send, Shift+Enter or Ctrl+J to insert a new line.</li>
                             <li>Select text in an AI reply to create a nested sub-session.</li>
                             <li>Use right-click actions to save reply snippets into Notebook.</li>
                             <li>Switch to Notebook mode from the left panel to edit notes.</li>
@@ -168,13 +190,25 @@ const ChatContainer: React.FC = () => {
                 <div ref={messagesEndRef} />
             </div>
             <div className="input-container">
-                <input
-                    type="text"
+                <textarea
+                    ref={inputRef}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
+                        if (e.ctrlKey && e.key.toLowerCase() === 'j') {
+                            e.preventDefault();
+                            insertNewLineAtCursor();
+                            return;
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSend();
+                        }
+                    }}
                     placeholder="Type a message..."
                     disabled={session.isLoading}
+                    rows={1}
                 />
                 <button
                     className={session.isLoading ? 'send-action-btn is-stop' : 'send-action-btn'}

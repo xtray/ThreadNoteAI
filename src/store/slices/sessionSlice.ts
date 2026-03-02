@@ -134,12 +134,24 @@ const sessionSlice = createSlice({
                 state.activeSessionId = nextRootSession?.id ?? null;
             }
         },
-        removeTurn: (state, action: PayloadAction<{ sessionId: string; userMessageId: string }>) => {
-            const { sessionId, userMessageId } = action.payload;
+        removeTurn: (state, action: PayloadAction<{ sessionId: string; messageId: string }>) => {
+            const { sessionId, messageId } = action.payload;
             const session = state.sessions[sessionId];
             if (!session) return;
 
-            const userIndex = session.messages.findIndex((m) => m.id === userMessageId && m.role === 'user');
+            const clickedIndex = session.messages.findIndex((m) => m.id === messageId);
+            if (clickedIndex < 0) return;
+
+            let userIndex = clickedIndex;
+            if (session.messages[clickedIndex].role !== 'user') {
+                userIndex = -1;
+                for (let i = clickedIndex - 1; i >= 0; i -= 1) {
+                    if (session.messages[i].role === 'user') {
+                        userIndex = i;
+                        break;
+                    }
+                }
+            }
             if (userIndex < 0) return;
 
             const userMessage = session.messages[userIndex];
