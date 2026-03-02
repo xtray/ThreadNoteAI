@@ -1,10 +1,14 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Message, spawnSession, addAnnotation, removeAnnotationAndSubSession, removeTurn } from '../../store/slices/sessionSlice';
 import { RootState } from '../../store';
 import FloatingOverlay from './FloatingOverlay';
 import MessageContent from './MessageContent';
+import TurnToolbar from './TurnToolbar';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
+import { getModelDisplayName } from '../../utils/modelDisplay';
+import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
+import { Check, Copy } from 'lucide-react';
 
 interface MessageItemProps {
     message: Message;
@@ -18,6 +22,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     const dispatch = useDispatch();
     const subModelId = useSelector((state: RootState) => state.config.subModelId);
     const subSessionContextMode = useSelector((state: RootState) => state.config.subSessionContextMode);
+    const customProviders = useSelector((state: RootState) => state.config.customProviders);
     const session = useSelector((state: RootState) => state.sessions.sessions[sessionId]);
     const notes = useSelector((state: RootState) => state.notes.notes);
     const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
@@ -26,6 +31,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     const [showOverlayBtn, setShowOverlayBtn] = useState(false);
     const [btnPosition, setBtnPosition] = useState({ top: 0, left: 0 });
     const [selectedText, setSelectedText] = useState('');
+    const [copiedTurn, setCopiedTurn] = useState(false);
     const [contextMenu, setContextMenu] = useState<
         { x: number; y: number; type: 'delete-turn' }
         | { x: number; y: number; type: 'add-note'; selectedText: string }
@@ -33,6 +39,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     >(null);
 
     const contentRef = useRef<HTMLDivElement>(null);
+    const copyResetTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         const closeMenu = () => setContextMenu(null);
@@ -43,6 +50,43 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             window.removeEventListener('scroll', closeMenu, true);
         };
     }, []);
+
+    useEffect(() => () => {
+        if (copyResetTimerRef.current !== null) {
+            window.clearTimeout(copyResetTimerRef.current);
+        }
+    }, []);
+
+    const assistantTurnMarkdown = useMemo(() => {
+        if (!session || message.role !== 'assistant') return null;
+        const assistantIndex = typeof messageIndex === 'number'
+            ? messageIndex
+            : session.messages.findIndex((m) => m.id === message.id);
+        if (assistantIndex < 0) return null;
+
+        const question = findTurnQuestionContent(session.messages, assistantIndex);
+        if (!question) return null;
+
+        const answer = stripThinkBlocks(message.content);
+        if (!answer) return null;
+
+        const modelName = getModelDisplayName(message.modelId || session.modelId, customProviders);
+        return buildTurnMarkdown({ question, answer, modelName });
+    }, [customProviders, message.content, message.id, message.modelId, message.role, messageIndex, session]);
+
+    const handleCopyTurnMarkdown = async () => {
+        if (!assistantTurnMarkdown) return;
+        const copied = await copyTextToClipboard(assistantTurnMarkdown);
+        if (!copied) return;
+        setCopiedTurn(true);
+        if (copyResetTimerRef.current !== null) {
+            window.clearTimeout(copyResetTimerRef.current);
+        }
+        copyResetTimerRef.current = window.setTimeout(() => {
+            setCopiedTurn(false);
+            copyResetTimerRef.current = null;
+        }, 1500);
+    };
 
     const handleMouseUp = (e: React.MouseEvent) => {
         // Only allow sub-sessions on assistant messages
@@ -227,12 +271,31 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             ref={contentRef}
         >
             <div className="message-bubble">
+                {session?.parentId === null && message.role === 'assistant' && message.modelId && (
+                    <div className="assistant-model-badge">
+                        {getModelDisplayName(message.modelId, customProviders)}
+                    </div>
+                )}
                 <MessageContent
                     content={message.content}
                     annotations={message.annotations}
                     onOpenSession={handleOpenSession}
                     onDeleteSubSession={handleDeleteSubSession}
                 />
+                {message.role === 'assistant' && assistantTurnMarkdown && (
+                    <TurnToolbar
+                        className="assistant-turn-toolbar"
+                        actions={[
+                            {
+                                id: 'copy-turn-markdown',
+                                label: copiedTurn ? 'Copied' : 'Copy',
+                                icon: copiedTurn ? <Check size={14} /> : <Copy size={14} />,
+                                onClick: handleCopyTurnMarkdown,
+                                title: 'Copy question + answer as Markdown',
+                            },
+                        ]}
+                    />
+                )}
             </div>
 
             {/* ─── Selection popup ─── */}

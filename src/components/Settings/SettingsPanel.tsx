@@ -8,7 +8,8 @@ import {
     removeCustomProvider,
     removeCustomProviderModel,
     setApiKey,
-    setMainModel,
+    setDefaultMainModelId,
+    setMaxConcurrentMainModels,
     setSubSessionContextMode,
     setSubModel,
     toggleSettings,
@@ -278,28 +279,69 @@ const SettingsPanel: React.FC = () => {
                     <h3>Model Configuration</h3>
 
                     <div className="settings-field">
-                        <label>Main Thread Model</label>
+                        <label>Main Window Concurrent Models</label>
                         <select
-                            value={config.mainModelId}
-                            onChange={(e) => dispatch(setMainModel(e.target.value))}
+                            value={config.maxConcurrentMainModels}
+                            onChange={(e) => dispatch(setMaxConcurrentMainModels(Number(e.target.value)))}
                         >
-                            <optgroup label="Built-in">
-                                {AVAILABLE_MODELS.map((m) => (
-                                    <option key={m.id} value={m.id}>
-                                        {m.displayName}
-                                    </option>
-                                ))}
-                            </optgroup>
-                            {customModels.length > 0 && (
-                                <optgroup label="Custom">
-                                    {customModels.map((m) => (
-                                        <option key={m.id} value={m.id}>
-                                            {m.displayName}
-                                        </option>
-                                    ))}
-                                </optgroup>
-                            )}
+                            {[1, 2, 3].map((count) => (
+                                <option key={count} value={count}>
+                                    {count}
+                                </option>
+                            ))}
                         </select>
+                    </div>
+
+                    <div className="settings-field">
+                        <label>Default Main Models</label>
+                        <div className="custom-model-list">
+                            {Array.from({ length: config.maxConcurrentMainModels }, (_, slotIndex) => {
+                                const selectedId = config.defaultMainModelIds[slotIndex] || config.defaultMainModelIds[0];
+                                const selectedInOtherSlots = new Set(
+                                    config.defaultMainModelIds.filter((modelId, index) => index !== slotIndex)
+                                );
+
+                                return (
+                                    <div key={`main-model-slot-${slotIndex}`} className="custom-model-row">
+                                        <label>{`Slot ${slotIndex + 1}`}</label>
+                                        <select
+                                            value={selectedId}
+                                            onChange={(e) =>
+                                                dispatch(setDefaultMainModelId({
+                                                    index: slotIndex,
+                                                    modelId: e.target.value,
+                                                }))
+                                            }
+                                        >
+                                            <optgroup label="Built-in">
+                                                {AVAILABLE_MODELS.map((m) => (
+                                                    <option
+                                                        key={m.id}
+                                                        value={m.id}
+                                                        disabled={selectedInOtherSlots.has(m.id)}
+                                                    >
+                                                        {m.displayName}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                            {customModels.length > 0 && (
+                                                <optgroup label="Custom">
+                                                    {customModels.map((m) => (
+                                                        <option
+                                                            key={m.id}
+                                                            value={m.id}
+                                                            disabled={selectedInOtherSlots.has(m.id)}
+                                                        >
+                                                            {m.displayName}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
+                                        </select>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     <div className="settings-field">

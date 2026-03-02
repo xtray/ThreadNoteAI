@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
-import { X, Send, Square, Maximize2, Minimize2 } from 'lucide-react';
+import { X, Send, Square, Maximize2, Minimize2, Check, Copy } from 'lucide-react';
 import MessageContent from './MessageContent';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
 import { createPortal } from 'react-dom';
 import { removeTurn, updateSessionContextMode, updateSessionModel } from '../../store/slices/sessionSlice';
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
+import TurnToolbar from './TurnToolbar';
+import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
 
 interface FloatingOverlayProps {
     sessionId: string;
@@ -29,6 +31,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [size, setSize] = useState({ width: 380, height: 500 });
     const [isResizing, setIsResizing] = useState(false);
+    const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<
         | { x: number; y: number; type: 'add-note'; selectedText: string; turnUserMessageId: string | null }
         | { x: number; y: number; type: 'delete-turn'; turnUserMessageId: string }
@@ -45,6 +48,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const overlayRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const resizeStartRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
+    const copyResetTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!session) {
@@ -103,6 +107,12 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         el.style.height = 'auto';
         el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
     }, [inputText]);
+
+    useEffect(() => () => {
+        if (copyResetTimerRef.current !== null) {
+            window.clearTimeout(copyResetTimerRef.current);
+        }
+    }, []);
 
     useEffect(() => {
         const closeOnLeftMouseDown = (event: MouseEvent) => {
@@ -330,6 +340,29 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         });
     }, [findTurnUserMessageId]);
 
+    const getAssistantTurnMarkdown = useCallback((assistantContent: string, assistantIndex: number, modelId?: string) => {
+        if (!session) return null;
+        const question = findTurnQuestionContent(session.messages, assistantIndex);
+        if (!question) return null;
+        const answer = stripThinkBlocks(assistantContent);
+        if (!answer) return null;
+        const modelName = getModelDisplayName(modelId || session.modelId, customProviders);
+        return buildTurnMarkdown({ question, answer, modelName });
+    }, [customProviders, session]);
+
+    const handleCopyAssistantTurnMarkdown = useCallback(async (messageId: string, markdown: string) => {
+        const copied = await copyTextToClipboard(markdown);
+        if (!copied) return;
+        setCopiedMessageId(messageId);
+        if (copyResetTimerRef.current !== null) {
+            window.clearTimeout(copyResetTimerRef.current);
+        }
+        copyResetTimerRef.current = window.setTimeout(() => {
+            setCopiedMessageId(null);
+            copyResetTimerRef.current = null;
+        }, 1500);
+    }, []);
+
     if (!session) return null;
 
     const anchorText = session.anchorText || '';
@@ -443,25 +476,46 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
 
             <div className="overlay-messages">
                 {session.messages.map((m, index) => (
-                    <div
-                        key={m.id}
-                        className={`overlay-message ${m.role}`}
-                        onContextMenu={
-                            m.role === 'assistant'
-                                ? (e) => handleAssistantMessageContextMenu(e, m.content, index)
-                                : (e) => handleUserMessageContextMenu(e, index)
-                        }
-                        onMouseUp={
-                            m.role === 'assistant'
-                                ? (e) => handleAssistantMessageMouseUp(e, m.content, index)
-                                : undefined
-                        }
-                    >
-                        <MessageContent
-                            content={m.content}
-                            annotations={m.annotations}
-                        />
-                    </div>
+                    (() => {
+                        const turnMarkdown = m.role === 'assistant'
+                            ? getAssistantTurnMarkdown(m.content, index, m.modelId)
+                            : null;
+                        return (
+                            <div
+                                key={m.id}
+                                className={`overlay-message ${m.role}`}
+                                onContextMenu={
+                                    m.role === 'assistant'
+                                        ? (e) => handleAssistantMessageContextMenu(e, m.content, index)
+                                        : (e) => handleUserMessageContextMenu(e, index)
+                                }
+                                onMouseUp={
+                                    m.role === 'assistant'
+                                        ? (e) => handleAssistantMessageMouseUp(e, m.content, index)
+                                        : undefined
+                                }
+                            >
+                                <MessageContent
+                                    content={m.content}
+                                    annotations={m.annotations}
+                                />
+                                {m.role === 'assistant' && turnMarkdown && (
+                                    <TurnToolbar
+                                        className="overlay-turn-toolbar"
+                                        actions={[
+                                            {
+                                                id: `copy-turn-${m.id}`,
+                                                label: copiedMessageId === m.id ? 'Copied' : 'Copy',
+                                                icon: copiedMessageId === m.id ? <Check size={13} /> : <Copy size={13} />,
+                                                onClick: () => handleCopyAssistantTurnMarkdown(m.id, turnMarkdown),
+                                                title: 'Copy question + answer as Markdown',
+                                            },
+                                        ]}
+                                    />
+                                )}
+                            </div>
+                        );
+                    })()
                 ))}
                 {session.isLoading && (
                     <div className="overlay-message assistant">

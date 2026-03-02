@@ -6,6 +6,7 @@ export interface Message {
     content: string;
     timestamp: number;
     annotations?: MessageAnnotation[];
+    modelId?: string;
 }
 
 export interface MessageAnnotation {
@@ -13,6 +14,27 @@ export interface MessageAnnotation {
     subSessionId: string;
     anchorText: string;
     createdAt: number;
+}
+
+export type MultiModelReplyStatus = 'idle' | 'streaming' | 'done' | 'error';
+
+export interface MultiModelRoundReply {
+    content: string;
+    status: MultiModelReplyStatus;
+}
+
+export interface MultiModelRound {
+    id: string;
+    modelOrder: string[];
+    modelReplies: Record<string, MultiModelRoundReply>;
+}
+
+export interface MultiModelSessionState {
+    rounds: Record<string, MultiModelRound>;
+    activeRoundId: string | null;
+    activeTabModelId: string | null;
+    primaryModelId: string | null;
+    lastUsedSelectedModelIds: string[];
 }
 
 export interface ChatSession {
@@ -25,6 +47,8 @@ export interface ChatSession {
     isLoading: boolean;
     contextMode?: 'new' | 'keep';
     mainContextSnapshotMessages?: Message[];
+    multiModel?: MultiModelSessionState;
+    multiReplyEnabled?: boolean;
 }
 
 export interface SessionState {
@@ -37,11 +61,45 @@ const initialState: SessionState = {
     sessions: {},
 }
 
+const uniqueNonEmptyModelIds = (modelIds: string[]) => {
+    const deduped = new Set<string>();
+    modelIds.forEach((id) => {
+        if (id) {
+            deduped.add(id);
+        }
+    });
+    return [...deduped];
+};
+
+const ensureRootMultiModelState = (session: ChatSession) => {
+    if (session.parentId !== null) {
+        return null;
+    }
+    if (!session.multiModel) {
+        session.multiModel = {
+            rounds: {},
+            activeRoundId: null,
+            activeTabModelId: null,
+            primaryModelId: null,
+            lastUsedSelectedModelIds: [],
+        };
+    }
+    return session.multiModel;
+};
+
+const ensureRootSessionDefaults = (session: ChatSession) => {
+    if (session.parentId !== null) return;
+    if (typeof session.multiReplyEnabled !== 'boolean') {
+        session.multiReplyEnabled = true;
+    }
+};
+
 const sessionSlice = createSlice({
     name: 'sessions',
     initialState,
     reducers: {
         createSession: (state, action: PayloadAction<ChatSession>) => {
+            ensureRootSessionDefaults(action.payload);
             state.sessions[action.payload.id] = action.payload
             state.activeSessionId = action.payload.id
         },
@@ -55,9 +113,13 @@ const sessionSlice = createSlice({
             state.activeSessionId = action.payload
         },
         spawnSession: (state, action: PayloadAction<ChatSession>) => {
+            ensureRootSessionDefaults(action.payload);
             state.sessions[action.payload.id] = action.payload
         },
         loadSessions: (state, action: PayloadAction<Record<string, ChatSession>>) => {
+            Object.values(action.payload).forEach((session) => {
+                ensureRootSessionDefaults(session);
+            });
             state.sessions = action.payload
         },
         setSessionLoading: (state, action: PayloadAction<{ sessionId: string; isLoading: boolean }>) => {
@@ -72,6 +134,122 @@ const sessionSlice = createSlice({
                 session.modelId = action.payload.modelId;
             }
         },
+        initializeMultiModelRound: (
+            state,
+            action: PayloadAction<{
+                sessionId: string;
+                roundId: string;
+                selectedModelIds: string[];
+                primaryModelId?: string;
+            }>
+        ) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (!session) return;
+
+            const multiModel = ensureRootMultiModelState(session);
+            if (!multiModel) return;
+
+            const selectedModelIds = uniqueNonEmptyModelIds(action.payload.selectedModelIds);
+            if (selectedModelIds.length === 0) return;
+
+            const primaryModelId = action.payload.primaryModelId && selectedModelIds.includes(action.payload.primaryModelId)
+                ? action.payload.primaryModelId
+                : selectedModelIds[0];
+
+            const modelReplies: Record<string, MultiModelRoundReply> = {};
+            selectedModelIds.forEach((modelId) => {
+                modelReplies[modelId] = { content: '', status: 'idle' };
+            });
+
+            multiModel.rounds[action.payload.roundId] = {
+                id: action.payload.roundId,
+                modelOrder: selectedModelIds,
+                modelReplies,
+            };
+            multiModel.activeRoundId = action.payload.roundId;
+            multiModel.primaryModelId = primaryModelId;
+            multiModel.lastUsedSelectedModelIds = selectedModelIds;
+            multiModel.activeTabModelId =
+                multiModel.activeTabModelId && selectedModelIds.includes(multiModel.activeTabModelId)
+                    ? multiModel.activeTabModelId
+                    : primaryModelId;
+            session.modelId = primaryModelId;
+        },
+        upsertMultiModelRoundReply: (
+            state,
+            action: PayloadAction<{
+                sessionId: string;
+                roundId: string;
+                modelId: string;
+                content?: string;
+                status?: MultiModelReplyStatus;
+            }>
+        ) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (!session) return;
+
+            const multiModel = ensureRootMultiModelState(session);
+            if (!multiModel) return;
+
+            const round = multiModel.rounds[action.payload.roundId] || {
+                id: action.payload.roundId,
+                modelOrder: [],
+                modelReplies: {},
+            };
+            if (!round.modelOrder.includes(action.payload.modelId)) {
+                round.modelOrder.push(action.payload.modelId);
+            }
+
+            const prevReply = round.modelReplies[action.payload.modelId] || { content: '', status: 'idle' as const };
+            round.modelReplies[action.payload.modelId] = {
+                content: action.payload.content ?? prevReply.content,
+                status: action.payload.status ?? prevReply.status,
+            };
+
+            multiModel.rounds[action.payload.roundId] = round;
+            if (!multiModel.activeRoundId) {
+                multiModel.activeRoundId = action.payload.roundId;
+            }
+        },
+        setMultiModelActiveTab: (
+            state,
+            action: PayloadAction<{ sessionId: string; modelId: string }>
+        ) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (!session) return;
+
+            const multiModel = ensureRootMultiModelState(session);
+            if (!multiModel) return;
+
+            multiModel.activeTabModelId = action.payload.modelId;
+        },
+        setMultiModelPrimaryModel: (
+            state,
+            action: PayloadAction<{ sessionId: string; modelId: string }>
+        ) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (!session) return;
+
+            const multiModel = ensureRootMultiModelState(session);
+            if (!multiModel) return;
+
+            multiModel.primaryModelId = action.payload.modelId;
+            if (!multiModel.activeTabModelId) {
+                multiModel.activeTabModelId = action.payload.modelId;
+            }
+            if (!multiModel.lastUsedSelectedModelIds.includes(action.payload.modelId)) {
+                multiModel.lastUsedSelectedModelIds.push(action.payload.modelId);
+            }
+            session.modelId = action.payload.modelId;
+        },
+        setSessionMultiReplyEnabled: (
+            state,
+            action: PayloadAction<{ sessionId: string; enabled: boolean }>
+        ) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (!session || session.parentId !== null) return;
+            session.multiReplyEnabled = action.payload.enabled;
+        },
         updateSessionContextMode: (
             state,
             action: PayloadAction<{ sessionId: string; contextMode: 'new' | 'keep' }>
@@ -81,12 +259,18 @@ const sessionSlice = createSlice({
                 session.contextMode = action.payload.contextMode;
             }
         },
-        updateMessage: (state, action: PayloadAction<{ sessionId: string; messageId: string; content: string }>) => {
+        updateMessage: (
+            state,
+            action: PayloadAction<{ sessionId: string; messageId: string; content: string; modelId?: string }>
+        ) => {
             const session = state.sessions[action.payload.sessionId];
             if (session) {
                 const msg = session.messages.find(m => m.id === action.payload.messageId);
                 if (msg) {
                     msg.content = action.payload.content;
+                    if (typeof action.payload.modelId === 'string') {
+                        msg.modelId = action.payload.modelId;
+                    }
                 }
             }
         },
@@ -216,6 +400,11 @@ export const {
     loadSessions,
     setSessionLoading,
     updateSessionModel,
+    initializeMultiModelRound,
+    upsertMultiModelRoundReply,
+    setMultiModelActiveTab,
+    setMultiModelPrimaryModel,
+    setSessionMultiReplyEnabled,
     updateSessionContextMode,
     updateMessage,
     addAnnotation,

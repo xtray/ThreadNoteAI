@@ -10,6 +10,8 @@ import {
 export interface ConfigState {
     apiKeys: Record<string, string>;   // providerId → apiKey
     mainModelId: string;               // default model for main thread
+    maxConcurrentMainModels: number;   // 1..3
+    defaultMainModelIds: string[];     // selected main models (length 1..3)
     subModelId: string;                // default model for sub-thread
     subSessionContextMode: 'new' | 'keep';
     customProviders: CustomProviderConfig[];
@@ -17,8 +19,16 @@ export interface ConfigState {
 }
 
 const STORAGE_KEY = 'threadnote_ai_config';
+const MIN_MAIN_MODEL_SLOTS = 1;
+const MAX_MAIN_MODEL_SLOTS = 3;
+const DEFAULT_MAIN_MODEL_SLOTS = 3;
 
-const loadFromStorage = (): Partial<ConfigState> => {
+type StoredConfig = Partial<ConfigState> & {
+    maxConcurrentMainModels?: unknown;
+    defaultMainModelIds?: unknown;
+};
+
+const loadFromStorage = (): StoredConfig => {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) return JSON.parse(raw);
@@ -28,9 +38,29 @@ const loadFromStorage = (): Partial<ConfigState> => {
 
 const saved = loadFromStorage();
 
+const clampMainModelSlots = (value: unknown): number => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return DEFAULT_MAIN_MODEL_SLOTS;
+    return Math.min(MAX_MAIN_MODEL_SLOTS, Math.max(MIN_MAIN_MODEL_SLOTS, Math.trunc(value)));
+};
+
+const asStringArray = (value: unknown): string[] => {
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is string => typeof item === 'string');
+};
+
+const getAvailableModelIds = (state: ConfigState): string[] => {
+    const builtInModelIds = AVAILABLE_MODELS.map((model) => model.id);
+    const customModelIds = state.customProviders.flatMap((provider) =>
+        provider.models.map((modelName) => buildCustomModelId(provider.id, modelName))
+    );
+    return [...builtInModelIds, ...customModelIds];
+};
+
 const initialState: ConfigState = {
     apiKeys: saved.apiKeys ?? {},
     mainModelId: saved.mainModelId ?? DEFAULT_MODEL_ID,
+    maxConcurrentMainModels: DEFAULT_MAIN_MODEL_SLOTS,
+    defaultMainModelIds: [],
     subModelId: saved.subModelId ?? DEFAULT_MODEL_ID,
     subSessionContextMode: saved.subSessionContextMode ?? 'new',
     customProviders: sanitizeCustomProviders(saved.customProviders),
@@ -44,14 +74,73 @@ const isModelIdAvailable = (state: ConfigState, modelId: string) => {
     );
 };
 
-const ensureSelectedModels = (state: ConfigState) => {
-    if (!isModelIdAvailable(state, state.mainModelId)) {
-        state.mainModelId = DEFAULT_MODEL_ID;
+const sanitizeDefaultMainModelIds = (
+    state: ConfigState,
+    rawDefaultModelIds: unknown,
+    maxConcurrentMainModels: number,
+    fallbackMainModelId: string
+) => {
+    const preferredModelIds = asStringArray(rawDefaultModelIds);
+    if (preferredModelIds.length === 0) {
+        preferredModelIds.push(fallbackMainModelId || DEFAULT_MODEL_ID);
     }
+
+    const uniqueValidModelIds: string[] = [];
+    for (const modelId of preferredModelIds) {
+        if (uniqueValidModelIds.length >= maxConcurrentMainModels) break;
+        if (!isModelIdAvailable(state, modelId) || uniqueValidModelIds.includes(modelId)) continue;
+        uniqueValidModelIds.push(modelId);
+    }
+
+    for (const modelId of getAvailableModelIds(state)) {
+        if (uniqueValidModelIds.length >= maxConcurrentMainModels) break;
+        if (uniqueValidModelIds.includes(modelId)) continue;
+        uniqueValidModelIds.push(modelId);
+    }
+
+    if (uniqueValidModelIds.length === 0) {
+        uniqueValidModelIds.push(DEFAULT_MODEL_ID);
+    }
+
+    return uniqueValidModelIds.slice(0, maxConcurrentMainModels);
+};
+
+const normalizeMainModelSettings = (
+    state: ConfigState,
+    options?: {
+        maxConcurrentMainModels?: unknown;
+        defaultMainModelIds?: unknown;
+        mainModelId?: string;
+    }
+) => {
+    const nextMaxConcurrentMainModels = clampMainModelSlots(
+        options?.maxConcurrentMainModels ?? state.maxConcurrentMainModels
+    );
+    const nextDefaultMainModelIds = sanitizeDefaultMainModelIds(
+        state,
+        options?.defaultMainModelIds ?? state.defaultMainModelIds,
+        nextMaxConcurrentMainModels,
+        options?.mainModelId ?? state.mainModelId
+    );
+
+    state.maxConcurrentMainModels = nextMaxConcurrentMainModels;
+    state.defaultMainModelIds = nextDefaultMainModelIds;
+    state.mainModelId = nextDefaultMainModelIds[0];
+};
+
+const ensureSelectedModels = (state: ConfigState) => {
+    normalizeMainModelSettings(state);
     if (!isModelIdAvailable(state, state.subModelId)) {
         state.subModelId = DEFAULT_MODEL_ID;
     }
 };
+
+normalizeMainModelSettings(initialState, {
+    maxConcurrentMainModels: saved.maxConcurrentMainModels,
+    defaultMainModelIds: saved.defaultMainModelIds,
+    mainModelId: saved.mainModelId ?? initialState.mainModelId,
+});
+ensureSelectedModels(initialState);
 
 const configSlice = createSlice({
     name: 'config',
@@ -62,7 +151,32 @@ const configSlice = createSlice({
             persistConfig(state);
         },
         setMainModel: (state, action: PayloadAction<string>) => {
-            state.mainModelId = action.payload;
+            if (!isModelIdAvailable(state, action.payload)) return;
+            state.defaultMainModelIds = [
+                action.payload,
+                ...state.defaultMainModelIds.filter((modelId) => modelId !== action.payload),
+            ];
+            normalizeMainModelSettings(state);
+            persistConfig(state);
+        },
+        setMaxConcurrentMainModels: (state, action: PayloadAction<number>) => {
+            normalizeMainModelSettings(state, {
+                maxConcurrentMainModels: action.payload,
+            });
+            persistConfig(state);
+        },
+        setDefaultMainModelId: (
+            state,
+            action: PayloadAction<{ index: number; modelId: string }>
+        ) => {
+            const { index, modelId } = action.payload;
+            if (index < 0 || index >= state.maxConcurrentMainModels) return;
+            if (!isModelIdAvailable(state, modelId)) return;
+            if (state.defaultMainModelIds.some((selectedModelId, selectedIndex) => selectedIndex !== index && selectedModelId === modelId)) {
+                return;
+            }
+            state.defaultMainModelIds[index] = modelId;
+            normalizeMainModelSettings(state);
             persistConfig(state);
         },
         setSubModel: (state, action: PayloadAction<string>) => {
@@ -165,6 +279,11 @@ const configSlice = createSlice({
             if (loaded.subModelId) state.subModelId = loaded.subModelId;
             if (loaded.subSessionContextMode) state.subSessionContextMode = loaded.subSessionContextMode;
             state.customProviders = sanitizeCustomProviders(loaded.customProviders);
+            normalizeMainModelSettings(state, {
+                maxConcurrentMainModels: loaded.maxConcurrentMainModels,
+                defaultMainModelIds: loaded.defaultMainModelIds,
+                mainModelId: loaded.mainModelId ?? state.mainModelId,
+            });
             ensureSelectedModels(state);
         },
     },
@@ -172,10 +291,20 @@ const configSlice = createSlice({
 
 function persistConfig(state: ConfigState) {
     try {
-        const { apiKeys, mainModelId, subModelId, subSessionContextMode, customProviders } = state;
+        const {
+            apiKeys,
+            mainModelId,
+            maxConcurrentMainModels,
+            defaultMainModelIds,
+            subModelId,
+            subSessionContextMode,
+            customProviders,
+        } = state;
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
             apiKeys,
             mainModelId,
+            maxConcurrentMainModels,
+            defaultMainModelIds,
             subModelId,
             subSessionContextMode,
             customProviders,
@@ -186,6 +315,8 @@ function persistConfig(state: ConfigState) {
 export const {
     setApiKey,
     setMainModel,
+    setMaxConcurrentMainModels,
+    setDefaultMainModelId,
     setSubModel,
     setSubSessionContextMode,
     addCustomProvider,

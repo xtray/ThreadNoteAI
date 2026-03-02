@@ -112,6 +112,11 @@ export function* persistenceSaga() {
     yield takeEvery('sessions/updateMessage' as any, persistAnnotatedMessage as any);
     yield takeEvery('sessions/updateSessionModel' as any, persistSessionModelChange as any);
     yield takeEvery('sessions/updateSessionContextMode' as any, persistSessionModelChange as any);
+    yield takeEvery('sessions/setSessionMultiReplyEnabled' as any, persistSessionModelChange as any);
+    yield takeEvery('sessions/initializeMultiModelRound' as any, persistSessionModelChange as any);
+    yield takeEvery('sessions/upsertMultiModelRoundReply' as any, persistSessionModelChange as any);
+    yield takeEvery('sessions/setMultiModelActiveTab' as any, persistSessionModelChange as any);
+    yield takeEvery('sessions/setMultiModelPrimaryModel' as any, persistSessionModelChange as any);
     yield takeEvery('sessions/removeAnnotationAndSubSession' as any, persistRemovedSubSession as any);
     yield takeEvery('sessions/removeSessionTree' as any, persistRemovedSubSession as any);
     yield takeEvery('sessions/removeTurn' as any, persistRemovedSubSession as any);

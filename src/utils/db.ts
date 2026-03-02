@@ -1,4 +1,4 @@
-import { ChatSession, Message } from '../store/slices/sessionSlice';
+import { ChatSession, Message, MultiModelSessionState } from '../store/slices/sessionSlice';
 import { Note } from '../store/slices/notesSlice';
 
 const DB_NAME = 'threadnote-ai-indexeddb';
@@ -16,6 +16,8 @@ interface StoredSession {
   modelId: string;
   contextMode?: 'new' | 'keep';
   mainContextSnapshotMessages?: Message[];
+  multiModel?: MultiModelSessionState;
+  multiReplyEnabled?: boolean;
 }
 
 interface StoredMessage extends Message {
@@ -73,6 +75,19 @@ const getDB = async () => {
   return dbPromise;
 };
 
+const normalizeMultiModelState = (
+  value: MultiModelSessionState | undefined
+): MultiModelSessionState | undefined => {
+  if (!value) return undefined;
+  return {
+    rounds: value.rounds || {},
+    activeRoundId: value.activeRoundId ?? null,
+    activeTabModelId: value.activeTabModelId ?? null,
+    primaryModelId: value.primaryModelId ?? null,
+    lastUsedSelectedModelIds: value.lastUsedSelectedModelIds || [],
+  };
+};
+
 export const initDB = async () => getDB();
 
 export const saveSession = async (session: ChatSession) => {
@@ -87,6 +102,8 @@ export const saveSession = async (session: ChatSession) => {
     modelId: session.modelId,
     contextMode: session.contextMode,
     mainContextSnapshotMessages: session.mainContextSnapshotMessages || [],
+    multiModel: session.parentId === null ? normalizeMultiModelState(session.multiModel) : undefined,
+    multiReplyEnabled: session.parentId === null ? session.multiReplyEnabled !== false : undefined,
   };
   store.put(record);
   await transactionDone(tx);
@@ -140,6 +157,8 @@ export const replaceAllSessionsData = async (
       modelId: session.modelId,
       contextMode: session.contextMode,
       mainContextSnapshotMessages: session.mainContextSnapshotMessages || [],
+      multiModel: session.parentId === null ? normalizeMultiModelState(session.multiModel) : undefined,
+      multiReplyEnabled: session.parentId === null ? session.multiReplyEnabled !== false : undefined,
     } as StoredSession);
 
     session.messages.forEach((message) => {
@@ -192,6 +211,8 @@ export const loadAllSessions = async (): Promise<{ sessions: Record<string, Chat
       messages: [],
       contextMode: s.contextMode,
       mainContextSnapshotMessages: s.mainContextSnapshotMessages || [],
+      multiModel: s.parentId === null ? normalizeMultiModelState(s.multiModel) : undefined,
+      multiReplyEnabled: s.parentId === null ? s.multiReplyEnabled !== false : undefined,
     };
   });
 
@@ -205,6 +226,7 @@ export const loadAllSessions = async (): Promise<{ sessions: Record<string, Chat
         content: m.content,
         timestamp: m.timestamp,
         annotations: m.annotations || [],
+        modelId: m.modelId,
       });
     });
 

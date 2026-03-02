@@ -1,33 +1,272 @@
-import { takeEvery, put, call, select } from 'redux-saga/effects'
-import { addMessage, Message, setSessionLoading, updateMessage } from '../slices/sessionSlice'
-import { callAIStream } from '../../utils/api'
-import { RootState } from '..'
+import { all, call, put, select, takeEvery } from 'redux-saga/effects'
 import axios from 'axios'
-import { store } from '..'
+import { store, RootState } from '..'
+import { callAIStream } from '../../utils/api'
+import {
+    addMessage,
+    initializeMultiModelRound,
+    Message,
+    setSessionLoading,
+    updateMessage,
+    upsertMultiModelRoundReply,
+} from '../slices/sessionSlice'
 
-const controllers = new Map<string, AbortController>();
+const controllersBySession = new Map<string, Map<string, AbortController>>();
+const MAX_MAIN_MODELS = 3;
+const MIN_MAIN_MODELS = 1;
+const NO_CONTENT_RETURNED = '(No content returned)';
+const RESPONSE_STOPPED = '⏹️ Response stopped.';
 
-function* handleSendMessage(action: { type: string; payload: { sessionId: string; content: string } }) {
-    const { sessionId, content } = action.payload;
+type SendMessageAction = {
+    type: string;
+    payload: {
+        sessionId: string;
+        content: string;
+        selectedModelIds?: string[];
+    };
+};
+
+const uniqueNonEmptyModelIds = (modelIds: string[] | undefined) => {
+    if (!modelIds || modelIds.length === 0) return [];
+    const deduped = new Set<string>();
+    modelIds.forEach((modelId) => {
+        if (modelId) {
+            deduped.add(modelId);
+        }
+    });
+    return [...deduped];
+};
+
+const clampMainModelLimit = (value: number) =>
+    Math.min(MAX_MAIN_MODELS, Math.max(MIN_MAIN_MODELS, Math.trunc(value || MIN_MAIN_MODELS)));
+
+export const shouldUseRootMultiModelFlow = (parentId: string | null) => parentId === null;
+
+export const resolveRootSelectedModelIds = (options: {
+    selectedModelIdsOverride?: string[];
+    lastUsedSelectedModelIds?: string[];
+    defaultMainModelIds?: string[];
+    maxConcurrentMainModels: number;
+    multiReplyEnabled?: boolean;
+    primaryModelId?: string | null;
+    fallbackModelId: string;
+}) => {
+    if (options.multiReplyEnabled === false) {
+        return [options.primaryModelId || options.fallbackModelId];
+    }
+    const overrideModelIds = uniqueNonEmptyModelIds(options.selectedModelIdsOverride);
+    const lastUsedModelIds = uniqueNonEmptyModelIds(options.lastUsedSelectedModelIds);
+    const defaultModelIds = uniqueNonEmptyModelIds(options.defaultMainModelIds);
+    const preferredModelIds = overrideModelIds.length > 0
+        ? overrideModelIds
+        : lastUsedModelIds.length > 0
+            ? lastUsedModelIds
+            : defaultModelIds;
+    const maxConcurrentMainModels = clampMainModelLimit(options.maxConcurrentMainModels);
+    return preferredModelIds.slice(0, maxConcurrentMainModels);
+};
+
+const isAbortError = (error: any) =>
+    axios.isCancel(error)
+    || error?.code === 'ERR_CANCELED'
+    || error?.name === 'CanceledError'
+    || error?.name === 'AbortError';
+
+const extractErrorMessage = (error: any) =>
+    error?.response?.data?.error?.message
+    || error?.response?.data?.base_resp?.status_msg
+    || error?.message
+    || 'Unknown error';
+
+const getMessagesForAI = (state: RootState, sessionId: string) => {
+    const session = state.sessions.sessions[sessionId];
+    if (!session) return [];
+    if (
+        session.parentId !== null
+        && session.contextMode === 'keep'
+        && Array.isArray(session.mainContextSnapshotMessages)
+    ) {
+        return [...session.mainContextSnapshotMessages, ...session.messages];
+    }
+    return session.messages;
+};
+
+const maybeMirrorPrimaryToCanonical = (options: {
+    sessionId: string;
+    roundId: string;
+    modelId: string;
+    assistantMessageId: string;
+    content: string;
+}) => {
+    const latestState = store.getState() as RootState;
+    const latestSession = latestState.sessions.sessions[options.sessionId];
+    const multiModel = latestSession?.multiModel;
+    if (!latestSession || !multiModel) return;
+    if (multiModel.activeRoundId !== options.roundId) return;
+    if (multiModel.primaryModelId !== options.modelId) return;
+
+    const canonicalAssistant = latestSession.messages.find((message) => message.id === options.assistantMessageId);
+    if (!canonicalAssistant) return;
+
+    store.dispatch(updateMessage({
+        sessionId: options.sessionId,
+        messageId: options.assistantMessageId,
+        content: options.content,
+        modelId: options.modelId,
+    }));
+};
+
+const streamRootModelReply = async (options: {
+    sessionId: string;
+    roundId: string;
+    modelId: string;
+    assistantMessageId: string;
+    messagesForAI: Message[];
+    config: Pick<RootState['config'], 'apiKeys' | 'customProviders'>;
+    controllers: Map<string, AbortController>;
+}) => {
+    const controller = new AbortController();
+    options.controllers.set(options.modelId, controller);
+    store.dispatch(upsertMultiModelRoundReply({
+        sessionId: options.sessionId,
+        roundId: options.roundId,
+        modelId: options.modelId,
+        status: 'streaming',
+        content: '',
+    }));
+
+    let latestContent = '';
+    try {
+        await callAIStream(
+            options.modelId,
+            options.messagesForAI,
+            options.config,
+            (content) => {
+                latestContent = content;
+                store.dispatch(upsertMultiModelRoundReply({
+                    sessionId: options.sessionId,
+                    roundId: options.roundId,
+                    modelId: options.modelId,
+                    content,
+                    status: 'streaming',
+                }));
+                maybeMirrorPrimaryToCanonical({
+                    sessionId: options.sessionId,
+                    roundId: options.roundId,
+                    modelId: options.modelId,
+                    assistantMessageId: options.assistantMessageId,
+                    content,
+                });
+            },
+            controller.signal,
+        );
+
+        const finalContent = latestContent.trim() ? latestContent : NO_CONTENT_RETURNED;
+        store.dispatch(upsertMultiModelRoundReply({
+            sessionId: options.sessionId,
+            roundId: options.roundId,
+            modelId: options.modelId,
+            content: finalContent,
+            status: 'done',
+        }));
+        maybeMirrorPrimaryToCanonical({
+            sessionId: options.sessionId,
+            roundId: options.roundId,
+            modelId: options.modelId,
+            assistantMessageId: options.assistantMessageId,
+            content: finalContent,
+        });
+    } catch (error: any) {
+        if (isAbortError(error)) {
+            const stoppedContent = latestContent.trim() ? latestContent : RESPONSE_STOPPED;
+            store.dispatch(upsertMultiModelRoundReply({
+                sessionId: options.sessionId,
+                roundId: options.roundId,
+                modelId: options.modelId,
+                content: stoppedContent,
+                status: 'done',
+            }));
+            maybeMirrorPrimaryToCanonical({
+                sessionId: options.sessionId,
+                roundId: options.roundId,
+                modelId: options.modelId,
+                assistantMessageId: options.assistantMessageId,
+                content: stoppedContent,
+            });
+            return;
+        }
+
+        const failureContent = `❌ Request failed: ${extractErrorMessage(error)}`;
+        store.dispatch(upsertMultiModelRoundReply({
+            sessionId: options.sessionId,
+            roundId: options.roundId,
+            modelId: options.modelId,
+            content: failureContent,
+            status: 'error',
+        }));
+        maybeMirrorPrimaryToCanonical({
+            sessionId: options.sessionId,
+            roundId: options.roundId,
+            modelId: options.modelId,
+            assistantMessageId: options.assistantMessageId,
+            content: failureContent,
+        });
+    } finally {
+        options.controllers.delete(options.modelId);
+    }
+};
+
+const streamSingleModelReply = async (options: {
+    sessionId: string;
+    modelId: string;
+    assistantMessageId: string;
+    messagesForAI: Message[];
+    config: Pick<RootState['config'], 'apiKeys' | 'customProviders'>;
+    controller: AbortController;
+}) => {
+    let latestContent = '';
+    await callAIStream(
+        options.modelId,
+        options.messagesForAI,
+        options.config,
+        (content) => {
+            latestContent = content;
+            store.dispatch(updateMessage({
+                sessionId: options.sessionId,
+                messageId: options.assistantMessageId,
+                content,
+                modelId: options.modelId,
+            }));
+        },
+        options.controller.signal,
+    );
+
+    if (!latestContent.trim()) {
+        store.dispatch(updateMessage({
+            sessionId: options.sessionId,
+            messageId: options.assistantMessageId,
+            content: NO_CONTENT_RETURNED,
+            modelId: options.modelId,
+        }));
+    }
+};
+
+function* handleSendMessage(action: SendMessageAction) {
+    const { sessionId, content, selectedModelIds } = action.payload;
 
     const currentState: RootState = yield select();
     const currentSession = currentState.sessions.sessions[sessionId];
     if (!currentSession || currentSession.isLoading) return;
 
-    // 1. Add user message
     const userMessage: Message = {
         id: Date.now().toString(),
         role: 'user',
         content,
         timestamp: Date.now(),
     };
-
     yield put(addMessage({ sessionId, message: userMessage }));
-
-    // 2. Set loading
     yield put(setSessionLoading({ sessionId, isLoading: true }));
 
-    // 3. Resolve which model & apiKey to use (after user message is in state)
     const state: RootState = yield select();
     const session = state.sessions.sessions[sessionId];
     if (!session) {
@@ -35,21 +274,24 @@ function* handleSendMessage(action: { type: string; payload: { sessionId: string
         return;
     }
 
-    const modelId = session.modelId;
-
-    const messagesForAI = (
-        session.parentId !== null
-        && session.contextMode === 'keep'
-        && Array.isArray(session.mainContextSnapshotMessages)
-    )
-        ? [...session.mainContextSnapshotMessages, ...session.messages]
-        : session.messages;
-
-    // 4. Call AI
-    const controller = new AbortController();
-    controllers.set(sessionId, controller);
+    const messagesForAI = getMessagesForAI(state, sessionId);
+    const isRootMultiModelSession = shouldUseRootMultiModelFlow(session.parentId);
+    const resolvedModelIds = isRootMultiModelSession
+        ? resolveRootSelectedModelIds({
+            selectedModelIdsOverride: selectedModelIds,
+            lastUsedSelectedModelIds: session.multiModel?.lastUsedSelectedModelIds || [],
+            defaultMainModelIds: state.config.defaultMainModelIds,
+            maxConcurrentMainModels: state.config.maxConcurrentMainModels,
+            multiReplyEnabled: session.multiReplyEnabled !== false,
+            primaryModelId: session.multiModel?.primaryModelId,
+            fallbackModelId: session.modelId,
+        })
+        : [session.modelId];
+    const selectedRootModelIds = resolvedModelIds.length > 0
+        ? resolvedModelIds
+        : [session.modelId];
+    const rootPrimaryModelId = selectedRootModelIds[0];
     const assistantMessageId = (Date.now() + 1).toString();
-
     yield put(addMessage({
         sessionId,
         message: {
@@ -57,92 +299,112 @@ function* handleSendMessage(action: { type: string; payload: { sessionId: string
             role: 'assistant',
             content: '',
             timestamp: Date.now(),
+            modelId: isRootMultiModelSession ? rootPrimaryModelId : session.modelId,
         },
     }));
 
+    const modelControllers = new Map<string, AbortController>();
+    controllersBySession.set(sessionId, modelControllers);
+
     try {
-        let latestContent = '';
-        yield call(
-            callAIStream,
-            modelId,
-            messagesForAI,
-            {
-                apiKeys: state.config.apiKeys,
-                customProviders: state.config.customProviders,
-            },
-            (content: string) => {
-                latestContent = content;
-                store.dispatch(updateMessage({
+        if (!isRootMultiModelSession) {
+            const controller = new AbortController();
+            modelControllers.set(session.modelId, controller);
+            try {
+                yield call(streamSingleModelReply, {
                     sessionId,
-                    messageId: assistantMessageId,
-                    content,
-                }));
-            },
-            controller.signal,
-        );
-        if (!latestContent.trim()) {
-            yield put(updateMessage({
-                sessionId,
-                messageId: assistantMessageId,
-                content: '(No content returned)',
-            }));
-        }
-    } catch (error: any) {
-        const cancelled = axios.isCancel(error)
-            || error?.code === 'ERR_CANCELED'
-            || error?.name === 'CanceledError'
-            || error?.name === 'AbortError';
-        if (cancelled) {
-            const latestState: RootState = yield select();
-            const latestSession = latestState.sessions.sessions[sessionId];
-            const assistantMsg = latestSession?.messages.find((m) => m.id === assistantMessageId);
-            if (!assistantMsg?.content?.trim()) {
-                yield put(updateMessage({
-                    sessionId,
-                    messageId: assistantMessageId,
-                    content: '⏹️ Response stopped.',
-                }));
+                    modelId: session.modelId,
+                    assistantMessageId,
+                    messagesForAI,
+                    config: {
+                        apiKeys: state.config.apiKeys,
+                        customProviders: state.config.customProviders,
+                    },
+                    controller,
+                });
+            } catch (error: any) {
+                if (isAbortError(error)) {
+                    const latestState: RootState = yield select();
+                    const latestSession = latestState.sessions.sessions[sessionId];
+                    const assistantMsg = latestSession?.messages.find((m) => m.id === assistantMessageId);
+                    if (!assistantMsg?.content?.trim()) {
+                        yield put(updateMessage({
+                            sessionId,
+                            messageId: assistantMessageId,
+                            content: RESPONSE_STOPPED,
+                            modelId: session.modelId,
+                        }));
+                    }
+                    return;
+                }
+
+                const errMsg = extractErrorMessage(error);
+                const latestState: RootState = yield select();
+                const latestSession = latestState.sessions.sessions[sessionId];
+                const assistantMsg = latestSession?.messages.find((m) => m.id === assistantMessageId);
+                if (!assistantMsg) {
+                    yield put(addMessage({
+                        sessionId,
+                        message: {
+                            id: (Date.now() + 2).toString(),
+                            role: 'assistant',
+                            content: `❌ Request failed: ${errMsg}`,
+                            timestamp: Date.now(),
+                            modelId: session.modelId,
+                        },
+                    }));
+                } else {
+                    yield put(updateMessage({
+                        sessionId,
+                        messageId: assistantMessageId,
+                        content: `❌ Request failed: ${errMsg}`,
+                        modelId: session.modelId,
+                    }));
+                }
+            } finally {
+                modelControllers.delete(session.modelId);
             }
             return;
         }
 
-        const errMsg = error?.response?.data?.error?.message
-            || error?.response?.data?.base_resp?.status_msg
-            || error?.message
-            || 'Unknown error';
+        const roundId = `round-${Date.now()}`;
+        const primaryModelId = rootPrimaryModelId;
 
-        const latestState: RootState = yield select();
-        const latestSession = latestState.sessions.sessions[sessionId];
-        const assistantMsg = latestSession?.messages.find((m) => m.id === assistantMessageId);
-        if (!assistantMsg) {
-            yield put(addMessage({
+        yield put(initializeMultiModelRound({
+            sessionId,
+            roundId,
+            selectedModelIds: selectedRootModelIds,
+            primaryModelId,
+        }));
+
+        yield all(selectedRootModelIds.map((modelId) =>
+            call(streamRootModelReply, {
                 sessionId,
-                message: {
-                    id: (Date.now() + 2).toString(),
-                    role: 'assistant',
-                    content: `❌ Request failed: ${errMsg}`,
-                    timestamp: Date.now(),
+                roundId,
+                modelId,
+                assistantMessageId,
+                messagesForAI,
+                config: {
+                    apiKeys: state.config.apiKeys,
+                    customProviders: state.config.customProviders,
                 },
-            }));
-        } else {
-            yield put(updateMessage({
-                sessionId,
-                messageId: assistantMessageId,
-                content: `❌ Request failed: ${errMsg}`,
-            }));
-        }
+                controllers: modelControllers,
+            })
+        ));
     } finally {
-        controllers.delete(sessionId);
+        controllersBySession.delete(sessionId);
         yield put(setSessionLoading({ sessionId, isLoading: false }));
     }
 }
 
 function* handleStopGenerating(action: { type: string; payload: { sessionId: string } }) {
-    const controller = controllers.get(action.payload.sessionId);
-    if (controller) {
+    const controllers = controllersBySession.get(action.payload.sessionId);
+    if (!controllers) return;
+
+    controllers.forEach((controller) => {
         controller.abort();
-        controllers.delete(action.payload.sessionId);
-    }
+    });
+    controllersBySession.delete(action.payload.sessionId);
 }
 
 export function* aiSaga() {

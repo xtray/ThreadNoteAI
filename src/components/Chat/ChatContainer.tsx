@@ -1,10 +1,45 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
 import MessageItem from './MessageItem';
-import { createSession, updateSessionModel } from '../../store/slices/sessionSlice';
+import {
+    createSession,
+    setMultiModelActiveTab,
+    setMultiModelPrimaryModel,
+    setSessionMultiReplyEnabled,
+    updateMessage,
+    updateSessionModel,
+} from '../../store/slices/sessionSlice';
 import { Send, Square } from 'lucide-react';
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
+
+const MAX_UI_MAIN_MODELS = 3;
+
+const uniqueNonEmptyModelIds = (modelIds: string[]) => {
+    const deduped = new Set<string>();
+    modelIds.forEach((modelId) => {
+        if (modelId) {
+            deduped.add(modelId);
+        }
+    });
+    return [...deduped];
+};
+
+const clampMainModelSlots = (value: number) =>
+    Math.min(MAX_UI_MAIN_MODELS, Math.max(1, Math.trunc(value || 1)));
+
+export const orderModelOptionsBySelection = <T extends { id: string }>(
+    options: T[],
+    selectedModelIds: string[],
+) => {
+    const selectedOptionIds = new Set(selectedModelIds);
+    const optionMap = new Map(options.map((option) => [option.id, option]));
+    const orderedSelectedOptions = uniqueNonEmptyModelIds(selectedModelIds)
+        .map((modelId) => optionMap.get(modelId))
+        .filter((option): option is T => !!option);
+    const remainingOptions = options.filter((option) => !selectedOptionIds.has(option.id));
+    return [...orderedSelectedOptions, ...remainingOptions];
+};
 
 const ChatContainer: React.FC = () => {
     const dispatch = useDispatch();
@@ -13,11 +48,23 @@ const ChatContainer: React.FC = () => {
         activeSessionId ? state.sessions.sessions[activeSessionId] : null
     );
     const mainModelId = useSelector((state: RootState) => state.config.mainModelId);
+    const maxConcurrentMainModels = useSelector((state: RootState) => state.config.maxConcurrentMainModels);
+    const defaultMainModelIds = useSelector((state: RootState) => state.config.defaultMainModelIds);
     const customProviders = useSelector((state: RootState) => state.config.customProviders);
     const modelOptions = getModelOptions(customProviders);
+    const allModelOptions = useMemo(() => [...modelOptions.builtIn, ...modelOptions.custom], [modelOptions]);
+    const maxSelectableMainModels = clampMainModelSlots(maxConcurrentMainModels);
+    const isRootSession = session?.parentId === null;
+    const isMultiReplyEnabled = !isRootSession || session?.multiReplyEnabled !== false;
 
     const [inputText, setInputText] = useState('');
     const [helpOpen, setHelpOpen] = useState(false);
+    const [nextRoundModelIds, setNextRoundModelIds] = useState<string[]>([]);
+    const [hasSelectionOverride, setHasSelectionOverride] = useState(false);
+    const orderedMainModelOptions = useMemo(
+        () => orderModelOptionsBySelection(allModelOptions, nextRoundModelIds),
+        [allModelOptions, nextRoundModelIds]
+    );
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const previousScrollStateRef = useRef<{
@@ -60,6 +107,37 @@ const ChatContainer: React.FC = () => {
     }, [session?.id, session?.isLoading, session?.messages]);
 
     useEffect(() => {
+        if (!session || session.parentId !== null) {
+            setNextRoundModelIds([]);
+            setHasSelectionOverride(false);
+            return;
+        }
+
+        const preferredModelIds = session.multiModel?.lastUsedSelectedModelIds?.length
+            ? session.multiModel.lastUsedSelectedModelIds
+            : defaultMainModelIds;
+        const primaryModelId = session.multiModel?.primaryModelId || session.modelId;
+        const sourceModelIds = isMultiReplyEnabled ? preferredModelIds : [primaryModelId];
+        const nextSelection = uniqueNonEmptyModelIds(sourceModelIds).slice(0, maxSelectableMainModels);
+        setNextRoundModelIds(
+            nextSelection.length > 0
+                ? nextSelection
+                : uniqueNonEmptyModelIds(defaultMainModelIds).slice(0, maxSelectableMainModels)
+        );
+        setHasSelectionOverride(false);
+    }, [
+        session?.id,
+        session?.parentId,
+        session?.multiModel?.lastUsedSelectedModelIds,
+        session?.multiModel?.primaryModelId,
+        session?.modelId,
+        session?.multiReplyEnabled,
+        defaultMainModelIds,
+        maxSelectableMainModels,
+        isMultiReplyEnabled,
+    ]);
+
+    useEffect(() => {
         const el = inputRef.current;
         if (!el) return;
         el.style.height = 'auto';
@@ -71,8 +149,13 @@ const ChatContainer: React.FC = () => {
 
         dispatch({
             type: 'sessions/sendMessage',
-            payload: { sessionId: activeSessionId, content: inputText }
+            payload: {
+                sessionId: activeSessionId,
+                content: inputText,
+                selectedModelIds: isRootSession && isMultiReplyEnabled && hasSelectionOverride ? nextRoundModelIds : undefined,
+            }
         });
+        setHasSelectionOverride(false);
         setInputText('');
     };
 
@@ -108,6 +191,104 @@ const ChatContainer: React.FC = () => {
             messages: [],
             modelId: mainModelId,
             isLoading: false,
+        }));
+    };
+
+    const activeRound = useMemo(() => {
+        if (!session || session.parentId !== null) return null;
+        const activeRoundId = session.multiModel?.activeRoundId;
+        if (!activeRoundId) return null;
+        return session.multiModel?.rounds[activeRoundId] || null;
+    }, [session]);
+
+    const activeTabModelId = useMemo(() => {
+        if (!session || !activeRound) return null;
+        const tabModelId = session.multiModel?.activeTabModelId;
+        if (tabModelId && activeRound.modelOrder.includes(tabModelId)) {
+            return tabModelId;
+        }
+        return activeRound.modelOrder[0] || null;
+    }, [activeRound, session]);
+
+    const latestAssistantMessageId = useMemo(() => {
+        if (!session) return null;
+        for (let i = session.messages.length - 1; i >= 0; i -= 1) {
+            if (session.messages[i].role === 'assistant') {
+                return session.messages[i].id;
+            }
+        }
+        return null;
+    }, [session]);
+
+    const displayedMessages = useMemo(() => {
+        if (!session || !latestAssistantMessageId || !activeRound || !activeTabModelId) {
+            return session?.messages ?? [];
+        }
+
+        const activeReply = activeRound.modelReplies[activeTabModelId];
+        if (!activeReply) {
+            return session.messages;
+        }
+
+        return session.messages.map((message) => {
+            if (message.id !== latestAssistantMessageId) {
+                return message;
+            }
+            return {
+                ...message,
+                content: activeReply.content,
+                modelId: activeTabModelId,
+            };
+        });
+    }, [session, latestAssistantMessageId, activeRound, activeTabModelId]);
+
+    const handleToggleNextModel = (modelId: string) => {
+        if (!isRootSession || session?.isLoading || !isMultiReplyEnabled) return;
+
+        const isSelected = nextRoundModelIds.includes(modelId);
+        if (isSelected) {
+            if (nextRoundModelIds.length <= 1) return;
+            setNextRoundModelIds(nextRoundModelIds.filter((id) => id !== modelId));
+            setHasSelectionOverride(true);
+            return;
+        }
+
+        if (nextRoundModelIds.length >= maxSelectableMainModels) return;
+        setNextRoundModelIds([...nextRoundModelIds, modelId]);
+        setHasSelectionOverride(true);
+    };
+
+    const handleTabSwitch = (modelId: string) => {
+        if (!session || session.parentId !== null) return;
+        dispatch(setMultiModelActiveTab({
+            sessionId: session.id,
+            modelId,
+        }));
+    };
+
+    const handleSetPrimary = () => {
+        if (!session || session.parentId !== null || !activeRound || !activeTabModelId) return;
+
+        dispatch(setMultiModelPrimaryModel({
+            sessionId: session.id,
+            modelId: activeTabModelId,
+        }));
+
+        if (!latestAssistantMessageId) return;
+        const activeReply = activeRound.modelReplies[activeTabModelId];
+        dispatch(updateMessage({
+            sessionId: session.id,
+            messageId: latestAssistantMessageId,
+            content: activeReply?.content ?? '',
+            modelId: activeTabModelId,
+        }));
+    };
+
+    const handleToggleMultiReply = () => {
+        if (!session || session.parentId !== null) return;
+        dispatch(setSessionMultiReplyEnabled({
+            sessionId: session.id,
+            enabled: !isMultiReplyEnabled,
         }));
     };
 
@@ -155,36 +336,102 @@ const ChatContainer: React.FC = () => {
     return (
         <div className="chat-content">
             <div className="chat-header">
-                <select
-                    className="chat-model-select"
-                    value={session.modelId}
-                    onChange={(e) =>
-                        dispatch(updateSessionModel({ sessionId: session.id, modelId: e.target.value }))
-                    }
-                    disabled={session.isLoading}
-                    title={getModelDisplayName(session.modelId, customProviders)}
-                >
-                    <optgroup label="Built-in">
-                        {modelOptions.builtIn.map((m) => (
-                            <option key={m.id} value={m.id}>
-                                {m.displayName}
-                            </option>
-                        ))}
-                    </optgroup>
-                    {modelOptions.custom.length > 0 && (
-                        <optgroup label="Custom">
-                            {modelOptions.custom.map((m) => (
+                {isRootSession ? (
+                    <div className="main-model-picker">
+                        <div className="main-model-chip-row">
+                            {orderedMainModelOptions.map((model) => {
+                                const selected = nextRoundModelIds.includes(model.id);
+                                const reachedLimit = !selected && nextRoundModelIds.length >= maxSelectableMainModels;
+                                return (
+                                    <button
+                                        key={model.id}
+                                        className={`main-model-chip${selected ? ' is-selected' : ''}`}
+                                        type="button"
+                                        onClick={() => handleToggleNextModel(model.id)}
+                                        disabled={session.isLoading || reachedLimit || !isMultiReplyEnabled}
+                                        title={model.displayName}
+                                    >
+                                        {model.displayName}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : (
+                    <select
+                        className="chat-model-select"
+                        value={session.modelId}
+                        onChange={(e) =>
+                            dispatch(updateSessionModel({ sessionId: session.id, modelId: e.target.value }))
+                        }
+                        disabled={session.isLoading}
+                        title={getModelDisplayName(session.modelId, customProviders)}
+                    >
+                        <optgroup label="Built-in">
+                            {modelOptions.builtIn.map((m) => (
                                 <option key={m.id} value={m.id}>
                                     {m.displayName}
                                 </option>
                             ))}
                         </optgroup>
-                    )}
-                </select>
+                        {modelOptions.custom.length > 0 && (
+                            <optgroup label="Custom">
+                                {modelOptions.custom.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                        {m.displayName}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        )}
+                    </select>
+                )}
                 {session.isLoading && <span className="loading-indicator">Thinking...</span>}
             </div>
+            {isRootSession && activeRound && (
+                <div className="multi-round-strip">
+                    <div className="multi-round-tabs">
+                        {activeRound.modelOrder.map((modelId) => {
+                            const modelReply = activeRound.modelReplies[modelId];
+                            const status = modelReply?.status || 'idle';
+                            const isActive = activeTabModelId === modelId;
+                            const isPrimary = session.multiModel?.primaryModelId === modelId;
+                            return (
+                                <button
+                                    key={modelId}
+                                    className={`multi-round-tab${isActive ? ' is-active' : ''}`}
+                                    type="button"
+                                    onClick={() => handleTabSwitch(modelId)}
+                                >
+                                    <span className={`reply-status-dot is-${status}`} />
+                                    <span>{getModelDisplayName(modelId, customProviders)}</span>
+                                    {isPrimary && <span className="primary-pill">Primary</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="multi-round-actions">
+                        <button
+                            type="button"
+                            className="set-primary-btn"
+                            onClick={handleSetPrimary}
+                            disabled={!activeTabModelId || session.multiModel?.primaryModelId === activeTabModelId}
+                        >
+                            Set as primary
+                        </button>
+                        <button
+                            type="button"
+                            className={`multi-reply-toggle${isMultiReplyEnabled ? ' is-on' : ''}`}
+                            onClick={handleToggleMultiReply}
+                            title={isMultiReplyEnabled ? 'Multi-model replies enabled' : 'Primary-only replies enabled'}
+                        >
+                            <span className="toggle-pill-label">Multi Reply</span>
+                            <span className="toggle-pill-state">{isMultiReplyEnabled ? 'ON' : 'OFF'}</span>
+                        </button>
+                    </div>
+                </div>
+            )}
             <div className="message-list">
-                {session.messages.map((m, index) => (
+                {displayedMessages.map((m, index) => (
                     <MessageItem key={m.id} message={m} sessionId={session.id} messageIndex={index} />
                 ))}
                 <div ref={messagesEndRef} />
