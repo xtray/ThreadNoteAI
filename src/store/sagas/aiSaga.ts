@@ -292,6 +292,7 @@ function* handleSendMessage(action: SendMessageAction) {
         : [session.modelId];
     const rootPrimaryModelId = selectedRootModelIds[0];
     const assistantMessageId = (Date.now() + 1).toString();
+    const roundId = isRootMultiModelSession ? `round-${assistantMessageId}` : undefined;
     yield put(addMessage({
         sessionId,
         message: {
@@ -300,6 +301,7 @@ function* handleSendMessage(action: SendMessageAction) {
             content: '',
             timestamp: Date.now(),
             modelId: isRootMultiModelSession ? rootPrimaryModelId : session.modelId,
+            roundId,
         },
     }));
 
@@ -367,8 +369,8 @@ function* handleSendMessage(action: SendMessageAction) {
             return;
         }
 
-        const roundId = `round-${Date.now()}`;
         const primaryModelId = rootPrimaryModelId;
+        if (!roundId) return;
 
         yield put(initializeMultiModelRound({
             sessionId,

@@ -3,7 +3,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
 import MessageItem from './MessageItem';
 import {
+    ChatSession,
     createSession,
+    Message,
+    MultiModelRound,
+    MultiModelSessionState,
     setMultiModelActiveTab,
     setMultiModelPrimaryModel,
     setSessionMultiReplyEnabled,
@@ -39,6 +43,53 @@ export const orderModelOptionsBySelection = <T extends { id: string }>(
         .filter((option): option is T => !!option);
     const remainingOptions = options.filter((option) => !selectedOptionIds.has(option.id));
     return [...orderedSelectedOptions, ...remainingOptions];
+};
+
+export const resolveRoundTabModelId = (
+    multiModel: MultiModelSessionState | undefined,
+    round: MultiModelRound | null | undefined,
+    roundId: string,
+    fallbackModelId?: string | null,
+) => {
+    if (!round) return fallbackModelId || null;
+    const roundTabModelId = multiModel?.roundActiveTabModelIds?.[roundId];
+    if (roundTabModelId && round.modelOrder.includes(roundTabModelId)) {
+        return roundTabModelId;
+    }
+    if (fallbackModelId && round.modelOrder.includes(fallbackModelId)) {
+        return fallbackModelId;
+    }
+    return round.modelOrder[0] || null;
+};
+
+export const projectRootSessionMessagesByRoundTabs = (session: ChatSession | null): Message[] => {
+    if (!session) return [];
+    if (session.parentId !== null || !session.multiModel) {
+        return session.messages;
+    }
+
+    return session.messages.map((message) => {
+        if (message.role !== 'assistant' || !message.roundId) {
+            return message;
+        }
+
+        const round = session.multiModel?.rounds[message.roundId];
+        const activeModelId = resolveRoundTabModelId(session.multiModel, round, message.roundId, message.modelId);
+        if (!round || !activeModelId) {
+            return message;
+        }
+
+        const activeReply = round.modelReplies[activeModelId];
+        if (!activeReply) {
+            return { ...message, modelId: activeModelId };
+        }
+
+        return {
+            ...message,
+            content: activeReply.content,
+            modelId: activeModelId,
+        };
+    });
 };
 
 const ChatContainer: React.FC = () => {
@@ -203,11 +254,12 @@ const ChatContainer: React.FC = () => {
 
     const activeTabModelId = useMemo(() => {
         if (!session || !activeRound) return null;
-        const tabModelId = session.multiModel?.activeTabModelId;
-        if (tabModelId && activeRound.modelOrder.includes(tabModelId)) {
-            return tabModelId;
-        }
-        return activeRound.modelOrder[0] || null;
+        return resolveRoundTabModelId(
+            session.multiModel,
+            activeRound,
+            activeRound.id,
+            session.multiModel?.activeTabModelId || session.modelId
+        );
     }, [activeRound, session]);
 
     const latestAssistantMessageId = useMemo(() => {
@@ -221,26 +273,8 @@ const ChatContainer: React.FC = () => {
     }, [session]);
 
     const displayedMessages = useMemo(() => {
-        if (!session || !latestAssistantMessageId || !activeRound || !activeTabModelId) {
-            return session?.messages ?? [];
-        }
-
-        const activeReply = activeRound.modelReplies[activeTabModelId];
-        if (!activeReply) {
-            return session.messages;
-        }
-
-        return session.messages.map((message) => {
-            if (message.id !== latestAssistantMessageId) {
-                return message;
-            }
-            return {
-                ...message,
-                content: activeReply.content,
-                modelId: activeTabModelId,
-            };
-        });
-    }, [session, latestAssistantMessageId, activeRound, activeTabModelId]);
+        return projectRootSessionMessagesByRoundTabs(session);
+    }, [session]);
 
     const handleToggleNextModel = (modelId: string) => {
         if (!isRootSession || session?.isLoading || !isMultiReplyEnabled) return;
@@ -258,11 +292,12 @@ const ChatContainer: React.FC = () => {
         setHasSelectionOverride(true);
     };
 
-    const handleTabSwitch = (modelId: string) => {
+    const handleTabSwitch = (modelId: string, roundId?: string) => {
         if (!session || session.parentId !== null) return;
         dispatch(setMultiModelActiveTab({
             sessionId: session.id,
             modelId,
+            roundId,
         }));
     };
 
@@ -400,7 +435,7 @@ const ChatContainer: React.FC = () => {
                                     key={modelId}
                                     className={`multi-round-tab${isActive ? ' is-active' : ''}`}
                                     type="button"
-                                    onClick={() => handleTabSwitch(modelId)}
+                                    onClick={() => handleTabSwitch(modelId, activeRound.id)}
                                 >
                                     <span className={`reply-status-dot is-${status}`} />
                                     <span>{getModelDisplayName(modelId, customProviders)}</span>
@@ -431,9 +466,48 @@ const ChatContainer: React.FC = () => {
                 </div>
             )}
             <div className="message-list">
-                {displayedMessages.map((m, index) => (
-                    <MessageItem key={m.id} message={m} sessionId={session.id} messageIndex={index} />
-                ))}
+                {displayedMessages.map((m, index) => {
+                    const roundId = isRootSession ? m.roundId : undefined;
+                    const messageRound = roundId ? session.multiModel?.rounds[roundId] : undefined;
+                    const messageTabModelId = roundId
+                        ? resolveRoundTabModelId(session.multiModel, messageRound, roundId, m.modelId)
+                        : null;
+                    const showPerMessageTabs = !!(
+                        messageRound
+                        && roundId
+                        && m.role === 'assistant'
+                        && messageRound.modelOrder.length > 1
+                        && messageTabModelId
+                    );
+
+                    return (
+                        <React.Fragment key={m.id}>
+                            {showPerMessageTabs && (
+                                <div className="message-round-tabs-row">
+                                    {messageRound.modelOrder.map((modelId) => {
+                                        const modelReply = messageRound.modelReplies[modelId];
+                                        const status = modelReply?.status || 'idle';
+                                        const isActive = messageTabModelId === modelId;
+                                        const isPrimary = session.multiModel?.primaryModelId === modelId;
+                                        return (
+                                            <button
+                                                key={`${m.id}-${modelId}`}
+                                                className={`message-round-tab${isActive ? ' is-active' : ''}`}
+                                                type="button"
+                                                onClick={() => handleTabSwitch(modelId, roundId)}
+                                            >
+                                                <span className={`reply-status-dot is-${status}`} />
+                                                <span>{getModelDisplayName(modelId, customProviders)}</span>
+                                                {isPrimary && <span className="primary-pill">Primary</span>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            <MessageItem message={m} sessionId={session.id} messageIndex={index} />
+                        </React.Fragment>
+                    );
+                })}
                 <div ref={messagesEndRef} />
             </div>
             <div className="input-container">

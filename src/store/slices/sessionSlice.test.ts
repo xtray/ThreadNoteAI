@@ -135,6 +135,9 @@ describe('sessionSlice multi-model rounds', () => {
         expect(next.sessions.main.multiModel).toEqual({
             activeRoundId: 'round-1',
             activeTabModelId: 'model-b',
+            roundActiveTabModelIds: {
+                'round-1': 'model-b',
+            },
             primaryModelId: 'model-b',
             lastUsedSelectedModelIds: ['model-a', 'model-b'],
             rounds: {
@@ -189,7 +192,34 @@ describe('sessionSlice multi-model rounds', () => {
         }));
 
         expect(next.sessions.main.multiModel?.activeTabModelId).toBe('model-b');
+        expect(next.sessions.main.multiModel?.roundActiveTabModelIds['round-1']).toBe('model-b');
         expect(next.sessions.main.multiModel?.primaryModelId).toBe('model-b');
+    });
+
+    it('switches tab for a historical round without changing active round tab', () => {
+        const afterRoundOne = reducer(buildState(), initializeMultiModelRound({
+            sessionId: 'main',
+            roundId: 'round-1',
+            selectedModelIds: ['model-a', 'model-b'],
+            primaryModelId: 'model-a',
+        }));
+        const afterRoundTwo = reducer(afterRoundOne, initializeMultiModelRound({
+            sessionId: 'main',
+            roundId: 'round-2',
+            selectedModelIds: ['model-c', 'model-d'],
+            primaryModelId: 'model-c',
+        }));
+
+        const next = reducer(afterRoundTwo, setMultiModelActiveTab({
+            sessionId: 'main',
+            roundId: 'round-1',
+            modelId: 'model-b',
+        }));
+
+        expect(next.sessions.main.multiModel?.activeRoundId).toBe('round-2');
+        expect(next.sessions.main.multiModel?.activeTabModelId).toBe('model-c');
+        expect(next.sessions.main.multiModel?.roundActiveTabModelIds['round-1']).toBe('model-b');
+        expect(next.sessions.main.multiModel?.roundActiveTabModelIds['round-2']).toBe('model-c');
     });
 
     it('keeps sub-sessions on single-model behavior', () => {

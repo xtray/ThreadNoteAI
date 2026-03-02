@@ -83,6 +83,7 @@ const normalizeMultiModelState = (
     rounds: value.rounds || {},
     activeRoundId: value.activeRoundId ?? null,
     activeTabModelId: value.activeTabModelId ?? null,
+    roundActiveTabModelIds: value.roundActiveTabModelIds || {},
     primaryModelId: value.primaryModelId ?? null,
     lastUsedSelectedModelIds: value.lastUsedSelectedModelIds || [],
   };
@@ -227,6 +228,7 @@ export const loadAllSessions = async (): Promise<{ sessions: Record<string, Chat
         timestamp: m.timestamp,
         annotations: m.annotations || [],
         modelId: m.modelId,
+        roundId: m.roundId,
       });
     });
 

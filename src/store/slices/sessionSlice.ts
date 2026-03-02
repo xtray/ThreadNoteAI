@@ -7,6 +7,7 @@ export interface Message {
     timestamp: number;
     annotations?: MessageAnnotation[];
     modelId?: string;
+    roundId?: string;
 }
 
 export interface MessageAnnotation {
@@ -33,6 +34,7 @@ export interface MultiModelSessionState {
     rounds: Record<string, MultiModelRound>;
     activeRoundId: string | null;
     activeTabModelId: string | null;
+    roundActiveTabModelIds: Record<string, string>;
     primaryModelId: string | null;
     lastUsedSelectedModelIds: string[];
 }
@@ -80,9 +82,12 @@ const ensureRootMultiModelState = (session: ChatSession) => {
             rounds: {},
             activeRoundId: null,
             activeTabModelId: null,
+            roundActiveTabModelIds: {},
             primaryModelId: null,
             lastUsedSelectedModelIds: [],
         };
+    } else if (!session.multiModel.roundActiveTabModelIds) {
+        session.multiModel.roundActiveTabModelIds = {};
     }
     return session.multiModel;
 };
@@ -91,6 +96,12 @@ const ensureRootSessionDefaults = (session: ChatSession) => {
     if (session.parentId !== null) return;
     if (typeof session.multiReplyEnabled !== 'boolean') {
         session.multiReplyEnabled = true;
+    }
+    if (session.multiModel && !session.multiModel.roundActiveTabModelIds) {
+        session.multiModel.roundActiveTabModelIds = {};
+        if (session.multiModel.activeRoundId && session.multiModel.activeTabModelId) {
+            session.multiModel.roundActiveTabModelIds[session.multiModel.activeRoundId] = session.multiModel.activeTabModelId;
+        }
     }
 };
 
@@ -169,10 +180,12 @@ const sessionSlice = createSlice({
             multiModel.activeRoundId = action.payload.roundId;
             multiModel.primaryModelId = primaryModelId;
             multiModel.lastUsedSelectedModelIds = selectedModelIds;
-            multiModel.activeTabModelId =
+            const activeTabModelId =
                 multiModel.activeTabModelId && selectedModelIds.includes(multiModel.activeTabModelId)
                     ? multiModel.activeTabModelId
                     : primaryModelId;
+            multiModel.activeTabModelId = activeTabModelId;
+            multiModel.roundActiveTabModelIds[action.payload.roundId] = activeTabModelId;
             session.modelId = primaryModelId;
         },
         upsertMultiModelRoundReply: (
@@ -213,7 +226,7 @@ const sessionSlice = createSlice({
         },
         setMultiModelActiveTab: (
             state,
-            action: PayloadAction<{ sessionId: string; modelId: string }>
+            action: PayloadAction<{ sessionId: string; modelId: string; roundId?: string }>
         ) => {
             const session = state.sessions[action.payload.sessionId];
             if (!session) return;
@@ -221,7 +234,15 @@ const sessionSlice = createSlice({
             const multiModel = ensureRootMultiModelState(session);
             if (!multiModel) return;
 
-            multiModel.activeTabModelId = action.payload.modelId;
+            const roundId = action.payload.roundId || multiModel.activeRoundId;
+            if (!roundId) return;
+            const round = multiModel.rounds[roundId];
+            if (!round || !round.modelOrder.includes(action.payload.modelId)) return;
+
+            multiModel.roundActiveTabModelIds[roundId] = action.payload.modelId;
+            if (multiModel.activeRoundId === roundId) {
+                multiModel.activeTabModelId = action.payload.modelId;
+            }
         },
         setMultiModelPrimaryModel: (
             state,
@@ -239,6 +260,10 @@ const sessionSlice = createSlice({
             }
             if (!multiModel.lastUsedSelectedModelIds.includes(action.payload.modelId)) {
                 multiModel.lastUsedSelectedModelIds.push(action.payload.modelId);
+            }
+            if (multiModel.activeRoundId) {
+                const tabModelId = multiModel.activeTabModelId || action.payload.modelId;
+                multiModel.roundActiveTabModelIds[multiModel.activeRoundId] = tabModelId;
             }
             session.modelId = action.payload.modelId;
         },

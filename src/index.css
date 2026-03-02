@@ -917,6 +917,33 @@ html,
     background: rgba(15, 23, 42, 0.06);
 }
 
+.message-round-tabs-row {
+    padding: 0.3rem 2rem 0.05rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.message-round-tab {
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 999px;
+    background: #ffffff;
+    color: #475569;
+    padding: 3px 9px;
+    font-size: 0.72rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.message-round-tab.is-active {
+    border-color: rgba(15, 23, 42, 0.35);
+    background: rgba(15, 23, 42, 0.06);
+    color: #1e293b;
+}
+
 .reply-status-dot {
     width: 7px;
     height: 7px;
