@@ -1,10 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, ChevronRight, Brain } from 'lucide-react';
+import { ChevronDown, ChevronRight, Brain, Check, Copy } from 'lucide-react';
 import { MessageAnnotation } from '../../store/slices/sessionSlice';
+import { copyTextToClipboard } from './turnUtils';
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const extractNodeText = (value: React.ReactNode): string => {
+    if (typeof value === 'string' || typeof value === 'number') {
+        return String(value);
+    }
+    if (Array.isArray(value)) {
+        return value.map(extractNodeText).join('');
+    }
+    if (React.isValidElement(value)) {
+        return extractNodeText((value.props as { children?: React.ReactNode }).children);
+    }
+    return '';
+};
 
 interface MessageContentProps {
     content: string;
@@ -12,6 +25,7 @@ interface MessageContentProps {
     onOpenSession?: (sessionId: string) => void;
     onDeleteSubSession?: (annotationId: string, subSessionId: string) => void;
     onResponseContextMenu?: (e: React.MouseEvent<HTMLElement>, excerpt: string) => void;
+    enableCodeBlockCopy?: boolean;
 }
 
 /**
@@ -26,8 +40,10 @@ const MessageContent: React.FC<MessageContentProps> = ({
     onOpenSession,
     onDeleteSubSession,
     onResponseContextMenu,
+    enableCodeBlockCopy = false,
 }) => {
     const [thinkExpanded, setThinkExpanded] = useState(false);
+    const [copiedCodeBlockId, setCopiedCodeBlockId] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<{
         x: number;
         y: number;
@@ -39,6 +55,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
         subSessionId: string;
     } | null>(null);
     const markdownRef = useRef<HTMLDivElement>(null);
+    const copyResetTimerRef = useRef<number | null>(null);
 
     // Extract <think>...</think> block(s)
     const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
@@ -180,6 +197,27 @@ const MessageContent: React.FC<MessageContentProps> = ({
         };
     }, []);
 
+    useEffect(() => () => {
+        if (copyResetTimerRef.current !== null) {
+            window.clearTimeout(copyResetTimerRef.current);
+        }
+    }, []);
+
+    const handleCopyCodeBlock = async (codeText: string, blockId: string) => {
+        if (!codeText) return;
+        const copied = await copyTextToClipboard(codeText);
+        if (!copied) return;
+        setCopiedCodeBlockId(blockId);
+        if (copyResetTimerRef.current !== null) {
+            window.clearTimeout(copyResetTimerRef.current);
+        }
+        copyResetTimerRef.current = window.setTimeout(() => {
+            setCopiedCodeBlockId(null);
+            copyResetTimerRef.current = null;
+        }, 1500);
+    };
+
+    let codeBlockRenderCount = 0;
     const renderers = {
         a: ({ href, children, ...props }: any) => {
             if (href && href.startsWith('subsession:')) {
@@ -192,7 +230,43 @@ const MessageContent: React.FC<MessageContentProps> = ({
                 );
             }
             return <a href={href} {...props}>{children}</a>;
-        }
+        },
+        pre: ({ children, node, ...props }: any) => {
+            if (!enableCodeBlockCopy) {
+                return <pre {...props}>{children}</pre>;
+            }
+
+            const codeText = extractNodeText(children).replace(/\n$/, '');
+            const blockId = `code-block-${codeBlockRenderCount++}`;
+            const copied = copiedCodeBlockId === blockId;
+
+            return (
+                <div className="code-block-wrapper">
+                    <pre {...props}>{children}</pre>
+                    <button
+                        type="button"
+                        className="code-block-copy-btn"
+                        title="Copy code block"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleCopyCodeBlock(codeText, blockId);
+                        }}
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }}
+                    >
+                        {copied ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copied ? 'Copied' : 'Copy'}</span>
+                    </button>
+                </div>
+            );
+        },
     };
 
     const handleMarkdownClick = (e: React.MouseEvent<HTMLDivElement>) => {

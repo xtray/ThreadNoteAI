@@ -281,6 +281,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                     annotations={message.annotations}
                     onOpenSession={handleOpenSession}
                     onDeleteSubSession={handleDeleteSubSession}
+                    enableCodeBlockCopy={message.role === 'assistant'}
                 />
                 {message.role === 'assistant' && assistantTurnMarkdown && (
                     <TurnToolbar
