@@ -36,4 +36,16 @@ describe('MessageContent code block copy button', () => {
 
         expect(html).not.toContain('code-block-copy-btn');
     });
+
+    it('renders search highlights from props without relying on dom mutation', () => {
+        const html = renderToStaticMarkup(
+            <MessageContent
+                content={'Alpha beta alphabet'}
+                searchQuery="al"
+            />
+        );
+
+        expect(html).toContain('search-highlight');
+        expect(html).toContain('<mark');
+    });
 });

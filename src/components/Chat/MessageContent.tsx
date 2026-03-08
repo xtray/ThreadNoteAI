@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Brain, Check, Copy } from 'lucide-react';
 import { MessageAnnotation } from '../../store/slices/sessionSlice';
 import { copyTextToClipboard } from './turnUtils';
 import { normalizeSearchQuery } from '../../utils/sidebarSearch';
+import { highlightReactNode, renderWithSearchHighlight } from '../../utils/searchHighlight';
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const extractNodeText = (value: React.ReactNode): string => {
@@ -93,20 +94,6 @@ const MessageContent: React.FC<MessageContentProps> = ({
                 } else {
                     parent.insertBefore(mark.firstChild, mark);
                 }
-            }
-            parent.removeChild(mark);
-        });
-    };
-
-    const removeInjectedSearchHighlights = () => {
-        const root = markdownRef.current;
-        if (!root) return;
-        const marks = root.querySelectorAll('.search-highlight[data-generated-search="true"]');
-        marks.forEach((mark) => {
-            const parent = mark.parentNode;
-            if (!parent) return;
-            while (mark.firstChild) {
-                parent.insertBefore(mark.firstChild, mark);
             }
             parent.removeChild(mark);
         });
@@ -203,65 +190,6 @@ const MessageContent: React.FC<MessageContentProps> = ({
     useEffect(() => {
         removeInjectedHighlights();
         sortedAnnotations.forEach(injectHighlight);
-    }, [mainContent, sortedAnnotations]);
-
-    useEffect(() => {
-        removeInjectedSearchHighlights();
-        const root = markdownRef.current;
-        if (!root || !normalizedSearchQuery) return;
-
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-            acceptNode(node) {
-                const text = node.textContent || '';
-                if (!text.trim()) return NodeFilter.FILTER_SKIP;
-                const parent = (node as Text).parentElement;
-                if (!parent) return NodeFilter.FILTER_SKIP;
-                if (parent.closest('.annotation-highlight')) return NodeFilter.FILTER_SKIP;
-                if (parent.closest('.search-highlight')) return NodeFilter.FILTER_SKIP;
-                if (parent.closest('button')) return NodeFilter.FILTER_SKIP;
-                return NodeFilter.FILTER_ACCEPT;
-            },
-        });
-
-        const textNodes: Text[] = [];
-        let current = walker.nextNode();
-        while (current) {
-            textNodes.push(current as Text);
-            current = walker.nextNode();
-        }
-
-        textNodes.forEach((textNode) => {
-            const originalText = textNode.textContent || '';
-            const lowerText = originalText.toLowerCase();
-            if (!lowerText.includes(normalizedSearchQuery)) {
-                return;
-            }
-
-            const fragment = document.createDocumentFragment();
-            let cursor = 0;
-
-            while (cursor < originalText.length) {
-                const matchIndex = lowerText.indexOf(normalizedSearchQuery, cursor);
-                if (matchIndex === -1) {
-                    fragment.appendChild(document.createTextNode(originalText.slice(cursor)));
-                    break;
-                }
-
-                if (matchIndex > cursor) {
-                    fragment.appendChild(document.createTextNode(originalText.slice(cursor, matchIndex)));
-                }
-
-                const mark = document.createElement('mark');
-                mark.className = 'search-highlight';
-                mark.setAttribute('data-generated-search', 'true');
-                mark.setAttribute('data-search-hit', 'true');
-                mark.textContent = originalText.slice(matchIndex, matchIndex + normalizedSearchQuery.length);
-                fragment.appendChild(mark);
-                cursor = matchIndex + normalizedSearchQuery.length;
-            }
-
-            textNode.parentNode?.replaceChild(fragment, textNode);
-        });
     }, [mainContent, normalizedSearchQuery, sortedAnnotations]);
 
     useEffect(() => {
@@ -296,6 +224,18 @@ const MessageContent: React.FC<MessageContentProps> = ({
 
     let codeBlockRenderCount = 0;
     const renderers = {
+        p: ({ children, ...props }: any) => renderWithSearchHighlight('p', children, props, normalizedSearchQuery, 'message-p'),
+        li: ({ children, ...props }: any) => renderWithSearchHighlight('li', children, props, normalizedSearchQuery, 'message-li'),
+        h1: ({ children, ...props }: any) => renderWithSearchHighlight('h1', children, props, normalizedSearchQuery, 'message-h1'),
+        h2: ({ children, ...props }: any) => renderWithSearchHighlight('h2', children, props, normalizedSearchQuery, 'message-h2'),
+        h3: ({ children, ...props }: any) => renderWithSearchHighlight('h3', children, props, normalizedSearchQuery, 'message-h3'),
+        h4: ({ children, ...props }: any) => renderWithSearchHighlight('h4', children, props, normalizedSearchQuery, 'message-h4'),
+        h5: ({ children, ...props }: any) => renderWithSearchHighlight('h5', children, props, normalizedSearchQuery, 'message-h5'),
+        h6: ({ children, ...props }: any) => renderWithSearchHighlight('h6', children, props, normalizedSearchQuery, 'message-h6'),
+        blockquote: ({ children, ...props }: any) => renderWithSearchHighlight('blockquote', children, props, normalizedSearchQuery, 'message-blockquote'),
+        strong: ({ children, ...props }: any) => renderWithSearchHighlight('strong', children, props, normalizedSearchQuery, 'message-strong'),
+        em: ({ children, ...props }: any) => renderWithSearchHighlight('em', children, props, normalizedSearchQuery, 'message-em'),
+        code: ({ children, className, ...props }: any) => renderWithSearchHighlight('code', children, { className, ...props }, normalizedSearchQuery, 'message-code'),
         a: ({ href, children, ...props }: any) => {
             if (href && href.startsWith('subsession:')) {
                 const sessionId = href.split(':')[1];
@@ -306,11 +246,11 @@ const MessageContent: React.FC<MessageContentProps> = ({
                     </span>
                 );
             }
-            return <a href={href} {...props}>{children}</a>;
+            return renderWithSearchHighlight('a', children, { href, ...props }, normalizedSearchQuery, 'message-link');
         },
         pre: ({ children, node, ...props }: any) => {
             if (!enableCodeBlockCopy) {
-                return <pre {...props}>{children}</pre>;
+                return <pre {...props}>{highlightReactNode(children, normalizedSearchQuery, 'message-pre')}</pre>;
             }
 
             const codeText = extractNodeText(children).replace(/\n$/, '');
@@ -319,7 +259,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
 
             return (
                 <div className="code-block-wrapper">
-                    <pre {...props}>{children}</pre>
+                    <pre {...props}>{highlightReactNode(children, normalizedSearchQuery, 'message-pre')}</pre>
                     <button
                         type="button"
                         className="code-block-copy-btn"
