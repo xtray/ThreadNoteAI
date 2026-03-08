@@ -10,6 +10,7 @@ import { RootState } from './store'
 import { loadNotes, Note, setActiveNoteId } from './store/slices/notesSlice'
 import { BookOpenText, Download, MessageSquare, Plus, Settings, Trash2, Upload } from 'lucide-react'
 import NotebookViewer from './components/Notebook/NotebookViewer'
+import { buildChatSidebarResult, buildNoteSidebarResult, getSessionTitle } from './utils/sidebarSearch';
 
 type WorkspaceMode = 'ai' | 'notebook';
 
@@ -51,6 +52,8 @@ function App() {
     const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('ai');
     const [notebookSettingsOpen, setNotebookSettingsOpen] = useState(false);
     const [notebookSettingsHint, setNotebookSettingsHint] = useState('');
+    const [chatSearch, setChatSearch] = useState('');
+    const [noteSearch, setNoteSearch] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const rootSessions = Object.values(sessions)
@@ -66,15 +69,24 @@ function App() {
         [notes]
     );
     const activeNote = activeNoteId ? notes[activeNoteId] || null : null;
-
-    const getSessionTitle = (sessionId: string) => {
-        const session = sessions[sessionId];
-        if (!session) return 'New chat';
-        const firstUser = session.messages.find((m) => m.role === 'user');
-        if (!firstUser?.content) return 'New chat';
-        const singleLine = firstUser.content.replace(/\s+/g, ' ').trim();
-        return singleLine.length > 36 ? `${singleLine.slice(0, 36)}...` : singleLine;
-    };
+    const visibleChatResults = useMemo(
+        () => rootSessions
+            .map((session) => ({
+                sessionId: session.id,
+                result: buildChatSidebarResult(session, chatSearch),
+            }))
+            .filter((item): item is { sessionId: string; result: NonNullable<typeof item.result> } => item.result !== null),
+        [chatSearch, rootSessions]
+    );
+    const visibleNoteResults = useMemo(
+        () => sortedNotes
+            .map((note) => ({
+                noteId: note.id,
+                result: buildNoteSidebarResult(note, noteSearch),
+            }))
+            .filter((item): item is { noteId: string; result: NonNullable<typeof item.result> } => item.result !== null),
+        [noteSearch, sortedNotes]
+    );
 
     const sanitizeFileName = (text: string) => {
         const base = text
@@ -333,28 +345,46 @@ function App() {
                             <Plus size={16} />
                             <span>New Chat</span>
                         </button>
+                        <input
+                            className="sidebar-search-input"
+                            type="search"
+                            placeholder="Search chats"
+                            value={chatSearch}
+                            onChange={(e) => setChatSearch(e.target.value)}
+                        />
                         <div className="history-list">
-                            {rootSessions.map((session) => (
-                                <button
-                                    key={session.id}
-                                    className={`history-item ${session.id === activeSessionId ? 'active' : ''}`}
-                                    onClick={() => dispatch(setActiveSession(session.id))}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        const maxX = window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN;
-                                        const adjustedX = Math.max(CONTEXT_MENU_MARGIN, Math.min(e.clientX, maxX));
-                                        setHistoryMenu({
-                                            x: adjustedX,
-                                            y: e.clientY,
-                                            sessionId: session.id,
-                                        });
-                                    }}
-                                    title={getSessionTitle(session.id)}
-                                >
-                                    {getSessionTitle(session.id)}
-                                </button>
-                            ))}
+                            {visibleChatResults.length === 0 ? (
+                                <div className="sidebar-empty-state">No chats match this search.</div>
+                            ) : (
+                                visibleChatResults.map(({ sessionId, result }) => (
+                                    <button
+                                        key={sessionId}
+                                        className={`history-item ${sessionId === activeSessionId ? 'active' : ''}`}
+                                        onClick={() => dispatch(setActiveSession(sessionId))}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            const maxX = window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN;
+                                            const adjustedX = Math.max(CONTEXT_MENU_MARGIN, Math.min(e.clientX, maxX));
+                                            setHistoryMenu({
+                                                x: adjustedX,
+                                                y: e.clientY,
+                                                sessionId,
+                                            });
+                                        }}
+                                        title={getSessionTitle(sessions[sessionId])}
+                                    >
+                                        {result.segments.map((segment, index) => (
+                                            <span
+                                                key={`${sessionId}-${index}`}
+                                                className={segment.matched ? 'history-item-highlight' : undefined}
+                                            >
+                                                {segment.text}
+                                            </span>
+                                        ))}
+                                    </button>
+                                ))
+                            )}
                         </div>
                         <div className="sidebar-spacer" />
                         <button className="clear-history-btn" onClick={() => setClearModalOpen(true)}>
@@ -368,28 +398,44 @@ function App() {
                     </>
                 ) : (
                     <>
+                        <input
+                            className="sidebar-search-input"
+                            type="search"
+                            placeholder="Search notes"
+                            value={noteSearch}
+                            onChange={(e) => setNoteSearch(e.target.value)}
+                        />
                         <div className="history-list note-history-list">
                             {sortedNotes.length === 0 ? (
                                 <div className="notes-empty">
                                     <p>No notes yet.</p>
                                     <p>Right click AI response text and choose Add to note.</p>
                                 </div>
+                            ) : visibleNoteResults.length === 0 ? (
+                                <div className="sidebar-empty-state">No notes match this search.</div>
                             ) : (
-                                sortedNotes.map((note) => (
+                                visibleNoteResults.map(({ noteId, result }) => (
                                     <button
-                                        key={note.id}
-                                        className={`history-item ${activeNoteId === note.id ? 'active' : ''}`}
-                                        onClick={() => dispatch(setActiveNoteId(note.id))}
+                                        key={noteId}
+                                        className={`history-item ${activeNoteId === noteId ? 'active' : ''}`}
+                                        onClick={() => dispatch(setActiveNoteId(noteId))}
                                         onContextMenu={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
                                             const maxX = window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN;
                                             const adjustedX = Math.max(CONTEXT_MENU_MARGIN, Math.min(e.clientX, maxX));
-                                            setNoteMenu({ x: adjustedX, y: e.clientY, noteId: note.id });
+                                            setNoteMenu({ x: adjustedX, y: e.clientY, noteId });
                                         }}
-                                        title={note.title}
+                                        title={notes[noteId]?.title ?? ''}
                                     >
-                                        {note.title}
+                                        {result.segments.map((segment, index) => (
+                                            <span
+                                                key={`${noteId}-${index}`}
+                                                className={segment.matched ? 'history-item-highlight' : undefined}
+                                            >
+                                                {segment.text}
+                                            </span>
+                                        ))}
                                     </button>
                                 ))
                             )}

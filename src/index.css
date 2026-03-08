@@ -86,6 +86,23 @@ html,
     background-color: var(--accent-hover);
 }
 
+.sidebar-search-input {
+    width: 100%;
+    margin-top: 0.85rem;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 0.68rem 0.8rem;
+    font-size: 0.83rem;
+    outline: none;
+}
+
+.sidebar-search-input:focus {
+    border-color: rgba(0, 122, 255, 0.35);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.08);
+}
+
 .chat-main {
     flex: 1;
     display: flex;
@@ -621,6 +638,18 @@ html,
     overflow: hidden;
     text-overflow: ellipsis;
     transition: all 0.15s;
+}
+
+.history-item-highlight {
+    background: rgba(255, 208, 92, 0.45);
+    color: inherit;
+    border-radius: 4px;
+}
+
+.sidebar-empty-state {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    padding: 0.5rem 0.1rem;
 }
 
 .history-item:hover {
