@@ -16,6 +16,11 @@ import {
 } from '../../store/slices/sessionSlice';
 import { Send, Square } from 'lucide-react';
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
+import { normalizeSearchQuery } from '../../utils/sidebarSearch';
+
+interface ChatContainerProps {
+    searchQuery?: string;
+}
 
 const MAX_UI_MAIN_MODELS = 3;
 
@@ -92,7 +97,7 @@ export const projectRootSessionMessagesByRoundTabs = (session: ChatSession | nul
     });
 };
 
-const ChatContainer: React.FC = () => {
+const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
     const dispatch = useDispatch();
     const activeSessionId = useSelector((state: RootState) => state.sessions.activeSessionId);
     const session = useSelector((state: RootState) =>
@@ -118,6 +123,7 @@ const ChatContainer: React.FC = () => {
     );
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messageListRef = useRef<HTMLDivElement>(null);
     const previousScrollStateRef = useRef<{
         sessionId: string;
         messageCount: number;
@@ -125,6 +131,10 @@ const ChatContainer: React.FC = () => {
         lastMessageContent: string;
         isLoading: boolean;
     } | null>(null);
+    const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
+    const displayedMessages = useMemo(() => {
+        return projectRootSessionMessagesByRoundTabs(session);
+    }, [session]);
 
     useEffect(() => {
         if (!session) {
@@ -150,12 +160,28 @@ const ChatContainer: React.FC = () => {
             && previous.lastMessageId === nextState.lastMessageId
             && previous.lastMessageContent !== nextState.lastMessageContent;
 
-        if (sessionChanged || messageCountIncreased || loadingStarted || loadingMessageUpdated) {
+        if (!normalizedSearchQuery && (sessionChanged || messageCountIncreased || loadingStarted || loadingMessageUpdated)) {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
 
         previousScrollStateRef.current = nextState;
-    }, [session?.id, session?.isLoading, session?.messages]);
+    }, [normalizedSearchQuery, session?.id, session?.isLoading, session?.messages]);
+
+    useEffect(() => {
+        if (!normalizedSearchQuery) return;
+
+        const scrollToFirstMatch = () => {
+            const firstMatch = messageListRef.current?.querySelector('.search-highlight[data-search-hit="true"]') as HTMLElement | null;
+            if (!firstMatch) return;
+            firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        };
+
+        const frame = window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(scrollToFirstMatch);
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [displayedMessages, normalizedSearchQuery, session?.id]);
 
     useEffect(() => {
         if (!session || session.parentId !== null) {
@@ -245,6 +271,22 @@ const ChatContainer: React.FC = () => {
         }));
     };
 
+    const handleToggleNextModel = (modelId: string) => {
+        if (!isRootSession || session?.isLoading || !isMultiReplyEnabled) return;
+
+        const isSelected = nextRoundModelIds.includes(modelId);
+        if (isSelected) {
+            if (nextRoundModelIds.length <= 1) return;
+            setNextRoundModelIds(nextRoundModelIds.filter((id) => id !== modelId));
+            setHasSelectionOverride(true);
+            return;
+        }
+
+        if (nextRoundModelIds.length >= maxSelectableMainModels) return;
+        setNextRoundModelIds([...nextRoundModelIds, modelId]);
+        setHasSelectionOverride(true);
+    };
+
     const activeRound = useMemo(() => {
         if (!session || session.parentId !== null) return null;
         const activeRoundId = session.multiModel?.activeRoundId;
@@ -271,26 +313,6 @@ const ChatContainer: React.FC = () => {
         }
         return null;
     }, [session]);
-
-    const displayedMessages = useMemo(() => {
-        return projectRootSessionMessagesByRoundTabs(session);
-    }, [session]);
-
-    const handleToggleNextModel = (modelId: string) => {
-        if (!isRootSession || session?.isLoading || !isMultiReplyEnabled) return;
-
-        const isSelected = nextRoundModelIds.includes(modelId);
-        if (isSelected) {
-            if (nextRoundModelIds.length <= 1) return;
-            setNextRoundModelIds(nextRoundModelIds.filter((id) => id !== modelId));
-            setHasSelectionOverride(true);
-            return;
-        }
-
-        if (nextRoundModelIds.length >= maxSelectableMainModels) return;
-        setNextRoundModelIds([...nextRoundModelIds, modelId]);
-        setHasSelectionOverride(true);
-    };
 
     const handleTabSwitch = (modelId: string, roundId?: string) => {
         if (!session || session.parentId !== null) return;
@@ -465,7 +487,7 @@ const ChatContainer: React.FC = () => {
                     </div>
                 </div>
             )}
-            <div className="message-list">
+            <div className="message-list" ref={messageListRef}>
                 {displayedMessages.map((m, index) => {
                     const roundId = isRootSession ? m.roundId : undefined;
                     const messageRound = roundId ? session.multiModel?.rounds[roundId] : undefined;
@@ -504,7 +526,12 @@ const ChatContainer: React.FC = () => {
                                     })}
                                 </div>
                             )}
-                            <MessageItem message={m} sessionId={session.id} messageIndex={index} />
+                            <MessageItem
+                                message={m}
+                                sessionId={session.id}
+                                messageIndex={index}
+                                searchQuery={normalizedSearchQuery}
+                            />
                         </React.Fragment>
                     );
                 })}

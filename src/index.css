@@ -646,6 +646,17 @@ html,
     border-radius: 4px;
 }
 
+.search-highlight {
+    background: rgba(255, 208, 92, 0.58);
+    color: inherit;
+    border-radius: 3px;
+    padding: 0 0.08em;
+}
+
+.search-highlight-inline {
+    padding: 0;
+}
+
 .sidebar-empty-state {
     font-size: 0.82rem;
     color: var(--text-secondary);

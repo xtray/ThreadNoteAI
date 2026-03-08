@@ -14,9 +14,10 @@ interface MessageItemProps {
     message: Message;
     sessionId: string;
     messageIndex?: number;
+    searchQuery?: string;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIndex }) => {
+const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIndex, searchQuery = '' }) => {
     const CONTEXT_MENU_WIDTH = 160;
     const CONTEXT_MENU_MARGIN = 10;
     const dispatch = useDispatch();
@@ -269,6 +270,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             onMouseUp={handleMouseUp}
             onContextMenu={handleContextMenu}
             ref={contentRef}
+            data-message-id={message.id}
         >
             <div className="message-bubble">
                 {session?.parentId === null && message.role === 'assistant' && message.modelId && (
@@ -282,6 +284,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                     onOpenSession={handleOpenSession}
                     onDeleteSubSession={handleDeleteSubSession}
                     enableCodeBlockCopy={message.role === 'assistant'}
+                    searchQuery={searchQuery}
                 />
                 {message.role === 'assistant' && assistantTurnMarkdown && (
                     <TurnToolbar

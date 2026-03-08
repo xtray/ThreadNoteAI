@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { ChevronDown, ChevronRight, Brain, Check, Copy } from 'lucide-react';
 import { MessageAnnotation } from '../../store/slices/sessionSlice';
 import { copyTextToClipboard } from './turnUtils';
+import { normalizeSearchQuery } from '../../utils/sidebarSearch';
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const extractNodeText = (value: React.ReactNode): string => {
@@ -26,6 +27,7 @@ interface MessageContentProps {
     onDeleteSubSession?: (annotationId: string, subSessionId: string) => void;
     onResponseContextMenu?: (e: React.MouseEvent<HTMLElement>, excerpt: string) => void;
     enableCodeBlockCopy?: boolean;
+    searchQuery?: string;
 }
 
 /**
@@ -41,6 +43,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
     onDeleteSubSession,
     onResponseContextMenu,
     enableCodeBlockCopy = false,
+    searchQuery = '',
 }) => {
     const [thinkExpanded, setThinkExpanded] = useState(false);
     const [copiedCodeBlockId, setCopiedCodeBlockId] = useState<string | null>(null);
@@ -56,6 +59,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
     } | null>(null);
     const markdownRef = useRef<HTMLDivElement>(null);
     const copyResetTimerRef = useRef<number | null>(null);
+    const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
 
     // Extract <think>...</think> block(s)
     const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
@@ -89,6 +93,20 @@ const MessageContent: React.FC<MessageContentProps> = ({
                 } else {
                     parent.insertBefore(mark.firstChild, mark);
                 }
+            }
+            parent.removeChild(mark);
+        });
+    };
+
+    const removeInjectedSearchHighlights = () => {
+        const root = markdownRef.current;
+        if (!root) return;
+        const marks = root.querySelectorAll('.search-highlight[data-generated-search="true"]');
+        marks.forEach((mark) => {
+            const parent = mark.parentNode;
+            if (!parent) return;
+            while (mark.firstChild) {
+                parent.insertBefore(mark.firstChild, mark);
             }
             parent.removeChild(mark);
         });
@@ -186,6 +204,65 @@ const MessageContent: React.FC<MessageContentProps> = ({
         removeInjectedHighlights();
         sortedAnnotations.forEach(injectHighlight);
     }, [mainContent, sortedAnnotations]);
+
+    useEffect(() => {
+        removeInjectedSearchHighlights();
+        const root = markdownRef.current;
+        if (!root || !normalizedSearchQuery) return;
+
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                const text = node.textContent || '';
+                if (!text.trim()) return NodeFilter.FILTER_SKIP;
+                const parent = (node as Text).parentElement;
+                if (!parent) return NodeFilter.FILTER_SKIP;
+                if (parent.closest('.annotation-highlight')) return NodeFilter.FILTER_SKIP;
+                if (parent.closest('.search-highlight')) return NodeFilter.FILTER_SKIP;
+                if (parent.closest('button')) return NodeFilter.FILTER_SKIP;
+                return NodeFilter.FILTER_ACCEPT;
+            },
+        });
+
+        const textNodes: Text[] = [];
+        let current = walker.nextNode();
+        while (current) {
+            textNodes.push(current as Text);
+            current = walker.nextNode();
+        }
+
+        textNodes.forEach((textNode) => {
+            const originalText = textNode.textContent || '';
+            const lowerText = originalText.toLowerCase();
+            if (!lowerText.includes(normalizedSearchQuery)) {
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+
+            while (cursor < originalText.length) {
+                const matchIndex = lowerText.indexOf(normalizedSearchQuery, cursor);
+                if (matchIndex === -1) {
+                    fragment.appendChild(document.createTextNode(originalText.slice(cursor)));
+                    break;
+                }
+
+                if (matchIndex > cursor) {
+                    fragment.appendChild(document.createTextNode(originalText.slice(cursor, matchIndex)));
+                }
+
+                const mark = document.createElement('mark');
+                mark.className = 'search-highlight';
+                mark.setAttribute('data-generated-search', 'true');
+                mark.setAttribute('data-search-hit', 'true');
+                mark.textContent = originalText.slice(matchIndex, matchIndex + normalizedSearchQuery.length);
+                fragment.appendChild(mark);
+                cursor = matchIndex + normalizedSearchQuery.length;
+            }
+
+            textNode.parentNode?.replaceChild(fragment, textNode);
+        });
+    }, [mainContent, normalizedSearchQuery, sortedAnnotations]);
 
     useEffect(() => {
         const closeContextMenu = () => setContextMenu(null);

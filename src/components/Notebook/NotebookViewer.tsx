@@ -4,9 +4,11 @@ import remarkGfm from 'remark-gfm';
 import { Note, upsertNote } from '../../store/slices/notesSlice';
 import { useDispatch } from 'react-redux';
 import type { Components } from 'react-markdown';
+import { buildNoteSearchTarget, buildSearchHighlightSegments, normalizeSearchQuery } from '../../utils/sidebarSearch';
 
 interface NotebookViewerProps {
     note: Note | null;
+    searchQuery?: string;
 }
 
 const splitMarkdownBlocks = (content: string): string[] => {
@@ -115,13 +117,24 @@ const toggleTaskStateAtIndex = (block: string, taskIndex: number): string => {
     return block;
 };
 
-const NotebookViewer: React.FC<NotebookViewerProps> = ({ note }) => {
+const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' }) => {
     const dispatch = useDispatch();
     const [blocks, setBlocks] = useState<string[]>(['']);
     const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null);
     const editorShellRef = useRef<HTMLDivElement>(null);
+    const blockListRef = useRef<HTMLDivElement>(null);
+    const titleRef = useRef<HTMLHeadingElement>(null);
     const textareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
     const draft = useMemo(() => joinMarkdownBlocks(blocks), [blocks]);
+    const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
+    const searchTarget = useMemo(
+        () => (note ? buildNoteSearchTarget(note, normalizedSearchQuery) : null),
+        [note, normalizedSearchQuery]
+    );
+    const titleSegments = useMemo(
+        () => buildSearchHighlightSegments(note?.title || '', normalizedSearchQuery),
+        [note?.title, normalizedSearchQuery]
+    );
 
     const resizeTextarea = React.useCallback((el: HTMLTextAreaElement | null) => {
         if (!el) return;
@@ -201,6 +214,91 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ note }) => {
         setActiveBlockIndex(null);
     }, [persistNow]);
 
+    useEffect(() => {
+        const root = blockListRef.current;
+        if (!root) return;
+
+        const marks = root.querySelectorAll('.search-highlight[data-generated-search="true"]');
+        marks.forEach((mark) => {
+            const parent = mark.parentNode;
+            if (!parent) return;
+            while (mark.firstChild) {
+                parent.insertBefore(mark.firstChild, mark);
+            }
+            parent.removeChild(mark);
+        });
+
+        if (!normalizedSearchQuery) return;
+
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                const text = node.textContent || '';
+                if (!text.trim()) return NodeFilter.FILTER_SKIP;
+                const parent = (node as Text).parentElement;
+                if (!parent) return NodeFilter.FILTER_SKIP;
+                if (parent.closest('.search-highlight')) return NodeFilter.FILTER_SKIP;
+                if (parent.closest('button')) return NodeFilter.FILTER_SKIP;
+                return NodeFilter.FILTER_ACCEPT;
+            },
+        });
+
+        const textNodes: Text[] = [];
+        let current = walker.nextNode();
+        while (current) {
+            textNodes.push(current as Text);
+            current = walker.nextNode();
+        }
+
+        textNodes.forEach((textNode) => {
+            const originalText = textNode.textContent || '';
+            const lowerText = originalText.toLowerCase();
+            if (!lowerText.includes(normalizedSearchQuery)) return;
+
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+
+            while (cursor < originalText.length) {
+                const matchIndex = lowerText.indexOf(normalizedSearchQuery, cursor);
+                if (matchIndex === -1) {
+                    fragment.appendChild(document.createTextNode(originalText.slice(cursor)));
+                    break;
+                }
+
+                if (matchIndex > cursor) {
+                    fragment.appendChild(document.createTextNode(originalText.slice(cursor, matchIndex)));
+                }
+
+                const mark = document.createElement('mark');
+                mark.className = 'search-highlight';
+                mark.setAttribute('data-generated-search', 'true');
+                mark.setAttribute('data-search-hit', 'true');
+                mark.textContent = originalText.slice(matchIndex, matchIndex + normalizedSearchQuery.length);
+                fragment.appendChild(mark);
+                cursor = matchIndex + normalizedSearchQuery.length;
+            }
+
+            textNode.parentNode?.replaceChild(fragment, textNode);
+        });
+    }, [blocks, normalizedSearchQuery, activeBlockIndex, note?.id]);
+
+    useEffect(() => {
+        if (!normalizedSearchQuery) return;
+
+        const frame = window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                if (searchTarget?.section === 'title') {
+                    titleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
+
+                const firstMatch = blockListRef.current?.querySelector('.search-highlight[data-search-hit="true"]') as HTMLElement | null;
+                firstMatch?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [normalizedSearchQuery, note?.id, searchTarget, blocks]);
+
     if (!note) {
         return (
             <div className="notebook-empty">
@@ -213,12 +311,22 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ note }) => {
     return (
         <div className="notebook-viewer">
             <div className="notebook-header">
-                <h2>{note.title}</h2>
+                <h2 ref={titleRef}>
+                    {titleSegments.map((segment, index) => (
+                        <span
+                            key={`${note.id}-title-${index}`}
+                            className={segment.matched ? 'search-highlight search-highlight-inline' : undefined}
+                            data-search-hit={segment.matched ? 'true' : undefined}
+                        >
+                            {segment.text}
+                        </span>
+                    ))}
+                </h2>
                 <span>{new Date(note.updatedAt).toLocaleString()}</span>
             </div>
 
             <div className="notebook-editor-shell" ref={editorShellRef}>
-                <div className="notebook-block-list">
+                <div className="notebook-block-list" ref={blockListRef}>
                     {blocks.map((block, index) => {
                         const isActive = activeBlockIndex === index;
                         let taskIndexCounter = 0;

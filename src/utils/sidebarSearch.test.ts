@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatSession } from '../store/slices/sessionSlice';
 import type { Note } from '../store/slices/notesSlice';
-import { buildChatSidebarResult, buildNoteSidebarResult } from './sidebarSearch';
+import {
+    buildChatSearchTarget,
+    buildChatSidebarResult,
+    buildNoteSearchTarget,
+    buildNoteSidebarResult,
+} from './sidebarSearch';
 
 const makeSession = (overrides: Partial<ChatSession> = {}): ChatSession => ({
     id: 'session-1',
@@ -97,5 +102,57 @@ describe('buildNoteSidebarResult', () => {
         expect(result?.label).toContain('alert');
         expect(result?.label).not.toBe('Release notes');
         expect(result?.segments.some((segment) => segment.matched && /alert/i.test(segment.text))).toBe(true);
+    });
+});
+
+describe('buildChatSearchTarget', () => {
+    it('returns the first matching message index and query when the session matches', () => {
+        const session = makeSession({
+            messages: [
+                { id: 'm1', role: 'user', content: 'Intro message', timestamp: 1 },
+                { id: 'm2', role: 'assistant', content: 'The important rollback procedure is documented here.', timestamp: 2 },
+                { id: 'm3', role: 'assistant', content: 'Another rollback mention later.', timestamp: 3 },
+            ],
+        });
+
+        expect(buildChatSearchTarget(session, 'rollback')).toEqual({
+            messageId: 'm2',
+            messageIndex: 1,
+            normalizedQuery: 'rollback',
+        });
+    });
+
+    it('returns null when the query is empty', () => {
+        const session = makeSession({
+            messages: [{ id: 'm1', role: 'user', content: 'Anything', timestamp: 1 }],
+        });
+
+        expect(buildChatSearchTarget(session, '   ')).toBeNull();
+    });
+});
+
+describe('buildNoteSearchTarget', () => {
+    it('prefers title matches over content matches', () => {
+        const note = makeNote({
+            title: 'Incident rollback checklist',
+            content: 'The body repeats rollback too.',
+        });
+
+        expect(buildNoteSearchTarget(note, 'rollback')).toEqual({
+            section: 'title',
+            normalizedQuery: 'rollback',
+        });
+    });
+
+    it('returns content metadata when only the body matches', () => {
+        const note = makeNote({
+            title: 'Incident checklist',
+            content: 'Monitor the alert routing after deploy.',
+        });
+
+        expect(buildNoteSearchTarget(note, 'alert')).toEqual({
+            section: 'content',
+            normalizedQuery: 'alert',
+        });
     });
 });

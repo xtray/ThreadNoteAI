@@ -11,20 +11,31 @@ export interface SidebarResult {
     segments: HighlightSegment[];
 }
 
+export interface ChatSearchTarget {
+    messageId: string;
+    messageIndex: number;
+    normalizedQuery: string;
+}
+
+export interface NoteSearchTarget {
+    section: 'title' | 'content';
+    normalizedQuery: string;
+}
+
 const DEFAULT_CHAT_TITLE = 'New chat';
 const DEFAULT_CHAT_LABEL_MAX = 36;
 const SNIPPET_RADIUS = 18;
 
 const collapseWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
 
-const trimQuery = (query: string) => collapseWhitespace(query).toLowerCase();
+export const normalizeSearchQuery = (query: string) => collapseWhitespace(query).toLowerCase();
 
 const truncateText = (text: string, maxLength: number) => (
     text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
 );
 
-const buildHighlightSegments = (label: string, query: string): HighlightSegment[] => {
-    const normalizedQuery = trimQuery(query);
+export const buildSearchHighlightSegments = (label: string, query: string): HighlightSegment[] => {
+    const normalizedQuery = normalizeSearchQuery(query);
     if (!normalizedQuery) {
         return [{ text: label, matched: false }];
     }
@@ -54,7 +65,7 @@ const buildHighlightSegments = (label: string, query: string): HighlightSegment[
 
 const buildSnippet = (text: string, query: string) => {
     const collapsed = collapseWhitespace(text);
-    const normalizedQuery = trimQuery(query);
+    const normalizedQuery = normalizeSearchQuery(query);
     if (!collapsed || !normalizedQuery) {
         return collapsed;
     }
@@ -74,7 +85,7 @@ const buildSnippet = (text: string, query: string) => {
 
 const makeSidebarResult = (label: string, query: string): SidebarResult => ({
     label,
-    segments: buildHighlightSegments(label, query),
+    segments: buildSearchHighlightSegments(label, query),
 });
 
 export const getSessionTitle = (session: ChatSession) => {
@@ -93,7 +104,7 @@ export const getSessionTitle = (session: ChatSession) => {
 
 export const buildChatSidebarResult = (session: ChatSession, query: string): SidebarResult | null => {
     const defaultLabel = getSessionTitle(session);
-    const normalizedQuery = trimQuery(query);
+    const normalizedQuery = normalizeSearchQuery(query);
     if (!normalizedQuery) {
         return makeSidebarResult(defaultLabel, '');
     }
@@ -113,8 +124,31 @@ export const buildChatSidebarResult = (session: ChatSession, query: string): Sid
     return null;
 };
 
+export const buildChatSearchTarget = (session: ChatSession, query: string): ChatSearchTarget | null => {
+    const normalizedQuery = normalizeSearchQuery(query);
+    if (!normalizedQuery) {
+        return null;
+    }
+
+    for (let index = 0; index < session.messages.length; index += 1) {
+        const message = session.messages[index];
+        const collapsed = collapseWhitespace(message.content);
+        if (!collapsed || !collapsed.toLowerCase().includes(normalizedQuery)) {
+            continue;
+        }
+
+        return {
+            messageId: message.id,
+            messageIndex: index,
+            normalizedQuery,
+        };
+    }
+
+    return null;
+};
+
 export const buildNoteSidebarResult = (note: Note, query: string): SidebarResult | null => {
-    const normalizedQuery = trimQuery(query);
+    const normalizedQuery = normalizeSearchQuery(query);
     if (!normalizedQuery) {
         return makeSidebarResult(note.title, '');
     }
@@ -130,4 +164,29 @@ export const buildNoteSidebarResult = (note: Note, query: string): SidebarResult
     }
 
     return makeSidebarResult(buildSnippet(content, normalizedQuery), normalizedQuery);
+};
+
+export const buildNoteSearchTarget = (note: Note, query: string): NoteSearchTarget | null => {
+    const normalizedQuery = normalizeSearchQuery(query);
+    if (!normalizedQuery) {
+        return null;
+    }
+
+    const title = collapseWhitespace(note.title);
+    if (title.toLowerCase().includes(normalizedQuery)) {
+        return {
+            section: 'title',
+            normalizedQuery,
+        };
+    }
+
+    const content = collapseWhitespace(note.content);
+    if (!content.toLowerCase().includes(normalizedQuery)) {
+        return null;
+    }
+
+    return {
+        section: 'content',
+        normalizedQuery,
+    };
 };

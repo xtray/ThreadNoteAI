@@ -455,9 +455,9 @@ function App() {
             <main className="chat-main">
                 <section className="workspace-main">
                     {workspaceMode === 'ai' ? (
-                        <ChatContainer />
+                        <ChatContainer searchQuery={chatSearch} />
                     ) : (
-                        <NotebookViewer note={activeNote} />
+                        <NotebookViewer note={activeNote} searchQuery={noteSearch} />
                     )}
                 </section>
             </main>
