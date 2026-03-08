@@ -32,6 +32,9 @@ It supports:
 - Type question and press Enter or Send.
 - While generating, click `Stop` to stop response.
 - Right-click a user question in main chat to delete that turn.
+- Main chat can ask up to 3 models at the same time.
+- When multiple models reply, use tabs to compare answers, then keep the most reliable reply as the main context by choosing `Set as primary`.
+- Switching tabs only changes what you are viewing. It does not change the context chain unless you explicitly set that tab as primary.
 
 ### Sub-session
 - In AI reply, select text and create/open sub-session.
@@ -67,6 +70,17 @@ In AI tab, open `Settings`:
 - Configure API keys per provider.
 - Configure main thread model.
 - Configure sub-thread model.
+
+### Main Chat Multi-model Logic
+- The app can send one main-chat question to 1 to 3 models in parallel.
+- The purpose of multi-model reply is to let you compare different answers for the same question and keep the best one as the ongoing main-thread context.
+- The chat does not maintain one long-running context chain per tab or per slot.
+- Only the current main-thread primary reply is appended into the main context chain for later questions.
+- Replies from other models in the same round are still saved and viewable in tabs, but they are not automatically inherited by later rounds.
+- If you switch to single-model mode for one round, that round still becomes part of the same main context chain.
+- If you later switch back to multiple models, all selected models receive that same accumulated main-thread context, including the single-model round in between.
+- Reordering selected models affects which model becomes the default primary for the new round, but it does not create separate context histories.
+- Default model slots in Settings are only defaults for future selection order. They are not independent context slots.
 
 Supported providers include:
 - MiniMax
