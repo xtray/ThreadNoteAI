@@ -1,12 +1,15 @@
 import { all, call, put, select, takeEvery } from 'redux-saga/effects'
 import axios from 'axios'
-import { store, RootState } from '..'
+import type { RootState } from '..'
 import { callAIStream } from '../../utils/api'
 import {
     addMessage,
     initializeMultiModelRound,
     Message,
+    regenerateMessage,
+    sendMessage,
     setSessionLoading,
+    stopGenerating,
     updateMessage,
     upsertMultiModelRoundReply,
 } from '../slices/sessionSlice'
@@ -17,12 +20,41 @@ const MIN_MAIN_MODELS = 1;
 const NO_CONTENT_RETURNED = '(No content returned)';
 const RESPONSE_STOPPED = '⏹️ Response stopped.';
 
+type SagaStoreAdapter = {
+    dispatch: (action: any) => unknown;
+    getState: () => RootState;
+};
+
+let sagaStoreAdapter: SagaStoreAdapter | null = null;
+
+export const bindAiSagaStore = (storeAdapter: SagaStoreAdapter) => {
+    sagaStoreAdapter = storeAdapter;
+};
+
+const getSagaStore = () => {
+    if (!sagaStoreAdapter) {
+        throw new Error('AI saga store adapter has not been bound');
+    }
+    return sagaStoreAdapter;
+};
+
 type SendMessageAction = {
     type: string;
     payload: {
         sessionId: string;
         content: string;
         selectedModelIds?: string[];
+        skipUserMessageAdd?: boolean;
+        assistantMessageId?: string;
+        contextEndIndexExclusive?: number;
+    };
+};
+
+type RegenerateMessageAction = {
+    type: string;
+    payload: {
+        sessionId: string;
+        messageId: string;
     };
 };
 
@@ -41,6 +73,23 @@ const clampMainModelLimit = (value: number) =>
     Math.min(MAX_MAIN_MODELS, Math.max(MIN_MAIN_MODELS, Math.trunc(value || MIN_MAIN_MODELS)));
 
 export const shouldUseRootMultiModelFlow = (parentId: string | null) => parentId === null;
+
+const findPreviousUserMessage = (messages: Message[], messageId: string) => {
+    const assistantIndex = messages.findIndex((message) => message.id === messageId);
+    if (assistantIndex < 0) return null;
+
+    const assistantMessage = messages[assistantIndex];
+    if (assistantMessage.role !== 'assistant') return null;
+
+    for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+        const candidate = messages[index];
+        if (candidate.role === 'user') {
+            return candidate;
+        }
+    }
+
+    return null;
+};
 
 export const resolveRootSelectedModelIds = (options: {
     selectedModelIdsOverride?: string[];
@@ -78,17 +127,28 @@ const extractErrorMessage = (error: any) =>
     || error?.message
     || 'Unknown error';
 
-const getMessagesForAI = (state: RootState, sessionId: string) => {
+const getMessagesForAI = (
+    state: RootState,
+    sessionId: string,
+    options?: {
+        endIndexExclusive?: number;
+        appendMessages?: Message[];
+    }
+) => {
     const session = state.sessions.sessions[sessionId];
     if (!session) return [];
+    const sessionMessages = typeof options?.endIndexExclusive === 'number'
+        ? session.messages.slice(0, options.endIndexExclusive)
+        : session.messages;
+    const appendMessages = options?.appendMessages || [];
     if (
         session.parentId !== null
         && session.contextMode === 'keep'
         && Array.isArray(session.mainContextSnapshotMessages)
     ) {
-        return [...session.mainContextSnapshotMessages, ...session.messages];
+        return [...session.mainContextSnapshotMessages, ...sessionMessages, ...appendMessages];
     }
-    return session.messages;
+    return [...sessionMessages, ...appendMessages];
 };
 
 const maybeMirrorPrimaryToCanonical = (options: {
@@ -98,7 +158,7 @@ const maybeMirrorPrimaryToCanonical = (options: {
     assistantMessageId: string;
     content: string;
 }) => {
-    const latestState = store.getState() as RootState;
+    const latestState = getSagaStore().getState();
     const latestSession = latestState.sessions.sessions[options.sessionId];
     const multiModel = latestSession?.multiModel;
     if (!latestSession || !multiModel) return;
@@ -108,7 +168,7 @@ const maybeMirrorPrimaryToCanonical = (options: {
     const canonicalAssistant = latestSession.messages.find((message) => message.id === options.assistantMessageId);
     if (!canonicalAssistant) return;
 
-    store.dispatch(updateMessage({
+    getSagaStore().dispatch(updateMessage({
         sessionId: options.sessionId,
         messageId: options.assistantMessageId,
         content: options.content,
@@ -127,7 +187,7 @@ const streamRootModelReply = async (options: {
 }) => {
     const controller = new AbortController();
     options.controllers.set(options.modelId, controller);
-    store.dispatch(upsertMultiModelRoundReply({
+    getSagaStore().dispatch(upsertMultiModelRoundReply({
         sessionId: options.sessionId,
         roundId: options.roundId,
         modelId: options.modelId,
@@ -143,7 +203,7 @@ const streamRootModelReply = async (options: {
             options.config,
             (content) => {
                 latestContent = content;
-                store.dispatch(upsertMultiModelRoundReply({
+                getSagaStore().dispatch(upsertMultiModelRoundReply({
                     sessionId: options.sessionId,
                     roundId: options.roundId,
                     modelId: options.modelId,
@@ -162,7 +222,7 @@ const streamRootModelReply = async (options: {
         );
 
         const finalContent = latestContent.trim() ? latestContent : NO_CONTENT_RETURNED;
-        store.dispatch(upsertMultiModelRoundReply({
+        getSagaStore().dispatch(upsertMultiModelRoundReply({
             sessionId: options.sessionId,
             roundId: options.roundId,
             modelId: options.modelId,
@@ -179,7 +239,7 @@ const streamRootModelReply = async (options: {
     } catch (error: any) {
         if (isAbortError(error)) {
             const stoppedContent = latestContent.trim() ? latestContent : RESPONSE_STOPPED;
-            store.dispatch(upsertMultiModelRoundReply({
+            getSagaStore().dispatch(upsertMultiModelRoundReply({
                 sessionId: options.sessionId,
                 roundId: options.roundId,
                 modelId: options.modelId,
@@ -197,7 +257,7 @@ const streamRootModelReply = async (options: {
         }
 
         const failureContent = `❌ Request failed: ${extractErrorMessage(error)}`;
-        store.dispatch(upsertMultiModelRoundReply({
+        getSagaStore().dispatch(upsertMultiModelRoundReply({
             sessionId: options.sessionId,
             roundId: options.roundId,
             modelId: options.modelId,
@@ -231,7 +291,7 @@ const streamSingleModelReply = async (options: {
         options.config,
         (content) => {
             latestContent = content;
-            store.dispatch(updateMessage({
+            getSagaStore().dispatch(updateMessage({
                 sessionId: options.sessionId,
                 messageId: options.assistantMessageId,
                 content,
@@ -242,7 +302,7 @@ const streamSingleModelReply = async (options: {
     );
 
     if (!latestContent.trim()) {
-        store.dispatch(updateMessage({
+        getSagaStore().dispatch(updateMessage({
             sessionId: options.sessionId,
             messageId: options.assistantMessageId,
             content: NO_CONTENT_RETURNED,
@@ -252,58 +312,76 @@ const streamSingleModelReply = async (options: {
 };
 
 function* handleSendMessage(action: SendMessageAction) {
-    const { sessionId, content, selectedModelIds } = action.payload;
+    const {
+        sessionId,
+        content,
+        selectedModelIds,
+        skipUserMessageAdd,
+        assistantMessageId: existingAssistantMessageId,
+        contextEndIndexExclusive,
+    } = action.payload;
 
     const currentState: RootState = yield select();
     const currentSession = currentState.sessions.sessions[sessionId];
     if (!currentSession || currentSession.isLoading) return;
 
-    const userMessage: Message = {
-        id: Date.now().toString(),
-        role: 'user',
-        content,
-        timestamp: Date.now(),
-    };
-    yield put(addMessage({ sessionId, message: userMessage }));
-    yield put(setSessionLoading({ sessionId, isLoading: true }));
-
-    const state: RootState = yield select();
-    const session = state.sessions.sessions[sessionId];
-    if (!session) {
-        yield put(setSessionLoading({ sessionId, isLoading: false }));
-        return;
+    const userMessage: Message | null = skipUserMessageAdd
+        ? null
+        : {
+            id: Date.now().toString(),
+            role: 'user',
+            content,
+            timestamp: Date.now(),
+        };
+    if (userMessage) {
+        yield put(addMessage({ sessionId, message: userMessage }));
     }
-
-    const messagesForAI = getMessagesForAI(state, sessionId);
-    const isRootMultiModelSession = shouldUseRootMultiModelFlow(session.parentId);
+    yield put(setSessionLoading({ sessionId, isLoading: true }));
+    const messagesForAI = getMessagesForAI(currentState, sessionId, {
+        endIndexExclusive: contextEndIndexExclusive,
+        appendMessages: userMessage ? [userMessage] : [],
+    });
+    const session = currentSession;
+    const state = currentState;
+    const isRootMultiModelSession = shouldUseRootMultiModelFlow(currentSession.parentId);
     const resolvedModelIds = isRootMultiModelSession
         ? resolveRootSelectedModelIds({
             selectedModelIdsOverride: selectedModelIds,
-            lastUsedSelectedModelIds: session.multiModel?.lastUsedSelectedModelIds || [],
+            lastUsedSelectedModelIds: currentSession.multiModel?.lastUsedSelectedModelIds || [],
             defaultMainModelIds: state.config.defaultMainModelIds,
             maxConcurrentMainModels: state.config.maxConcurrentMainModels,
-            multiReplyEnabled: session.multiReplyEnabled !== false,
-            primaryModelId: session.multiModel?.primaryModelId,
-            fallbackModelId: session.modelId,
+            multiReplyEnabled: currentSession.multiReplyEnabled !== false,
+            primaryModelId: currentSession.multiModel?.primaryModelId,
+            fallbackModelId: currentSession.modelId,
         })
-        : [session.modelId];
+        : [currentSession.modelId];
     const selectedRootModelIds = resolvedModelIds.length > 0
         ? resolvedModelIds
-        : [session.modelId];
+        : [currentSession.modelId];
     const rootPrimaryModelId = selectedRootModelIds[0];
-    const assistantMessageId = (Date.now() + 1).toString();
-    const roundId = isRootMultiModelSession ? `round-${assistantMessageId}` : undefined;
-    yield put(addMessage({
-        sessionId,
-        message: {
-            id: assistantMessageId,
-            role: 'assistant',
+    const assistantMessageId = existingAssistantMessageId || (Date.now() + 1).toString();
+    const roundId = isRootMultiModelSession ? `round-${Date.now()}-${assistantMessageId}` : undefined;
+    if (skipUserMessageAdd && existingAssistantMessageId) {
+        yield put(updateMessage({
+            sessionId,
+            messageId: assistantMessageId,
             content: '',
-            timestamp: Date.now(),
             modelId: isRootMultiModelSession ? rootPrimaryModelId : session.modelId,
             roundId,
-        },
-    }));
+        }));
+    } else {
+        yield put(addMessage({
+            sessionId,
+            message: {
+                id: assistantMessageId,
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+                modelId: isRootMultiModelSession ? rootPrimaryModelId : session.modelId,
+                roundId,
+            },
+        }));
+    }
 
     const modelControllers = new Map<string, AbortController>();
     controllersBySession.set(sessionId, modelControllers);
@@ -399,6 +477,26 @@ function* handleSendMessage(action: SendMessageAction) {
     }
 }
 
+export function* handleRegenerateMessage(action: RegenerateMessageAction) {
+    const state: RootState = yield select();
+    const session = state.sessions.sessions[action.payload.sessionId];
+    if (!session || session.isLoading) return;
+
+    const assistantIndex = session.messages.findIndex((message) => message.id === action.payload.messageId);
+    if (assistantIndex < 0) return;
+
+    const previousUserMessage = findPreviousUserMessage(session.messages, action.payload.messageId);
+    if (!previousUserMessage) return;
+
+    yield put(sendMessage({
+        sessionId: action.payload.sessionId,
+        content: previousUserMessage.content,
+        skipUserMessageAdd: true,
+        assistantMessageId: action.payload.messageId,
+        contextEndIndexExclusive: assistantIndex,
+    }));
+}
+
 function* handleStopGenerating(action: { type: string; payload: { sessionId: string } }) {
     const controllers = controllersBySession.get(action.payload.sessionId);
     if (!controllers) return;
@@ -410,6 +508,7 @@ function* handleStopGenerating(action: { type: string; payload: { sessionId: str
 }
 
 export function* aiSaga() {
-    yield takeEvery('sessions/sendMessage', handleSendMessage);
-    yield takeEvery('sessions/stopGenerating', handleStopGenerating);
+    yield takeEvery(sendMessage.type, handleSendMessage);
+    yield takeEvery(regenerateMessage.type, handleRegenerateMessage);
+    yield takeEvery(stopGenerating.type, handleStopGenerating);
 }

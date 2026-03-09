@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import reducer, {
     createSession,
     initializeMultiModelRound,
+    removeMessage,
+    regenerateMessage,
+    sendMessage,
     setSessionMultiReplyEnabled,
     SessionState,
     setMultiModelActiveTab,
@@ -88,6 +91,52 @@ describe('sessionSlice removeTurn', () => {
         });
 
         expect(next.sessions.main.messages.map((m) => m.id)).toEqual(['u1', 'a1']);
+    });
+
+    it('removes only the targeted assistant message for regenerate cleanup', () => {
+        const start = buildState();
+
+        const next = reducer(start, removeMessage({
+            sessionId: 'main',
+            messageId: 'a2',
+        }));
+
+        expect(next.sessions.main.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'u2']);
+        expect(next.sessions['sub-1']).toBeDefined();
+    });
+});
+
+describe('sessionSlice saga action creators', () => {
+    it('creates a sendMessage action with the full payload', () => {
+        expect(sendMessage({
+            sessionId: 'main',
+            content: 'Question',
+            skipUserMessageAdd: true,
+            assistantMessageId: 'a1',
+            contextEndIndexExclusive: 1,
+        })).toEqual({
+            type: 'sessions/sendMessage',
+            payload: {
+                sessionId: 'main',
+                content: 'Question',
+                skipUserMessageAdd: true,
+                assistantMessageId: 'a1',
+                contextEndIndexExclusive: 1,
+            },
+        });
+    });
+
+    it('creates a regenerateMessage action with the target ids', () => {
+        expect(regenerateMessage({
+            sessionId: 'main',
+            messageId: 'a1',
+        })).toEqual({
+            type: 'sessions/regenerateMessage',
+            payload: {
+                sessionId: 'main',
+                messageId: 'a1',
+            },
+        });
     });
 });
 

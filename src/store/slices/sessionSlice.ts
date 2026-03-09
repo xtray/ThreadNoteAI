@@ -286,7 +286,13 @@ const sessionSlice = createSlice({
         },
         updateMessage: (
             state,
-            action: PayloadAction<{ sessionId: string; messageId: string; content: string; modelId?: string }>
+            action: PayloadAction<{
+                sessionId: string;
+                messageId: string;
+                content: string;
+                modelId?: string;
+                roundId?: string;
+            }>
         ) => {
             const session = state.sessions[action.payload.sessionId];
             if (session) {
@@ -295,6 +301,9 @@ const sessionSlice = createSlice({
                     msg.content = action.payload.content;
                     if (typeof action.payload.modelId === 'string') {
                         msg.modelId = action.payload.modelId;
+                    }
+                    if (typeof action.payload.roundId === 'string') {
+                        msg.roundId = action.payload.roundId;
                     }
                 }
             }
@@ -386,6 +395,31 @@ const sessionSlice = createSlice({
 
             session.messages.splice(userIndex, hasAssistantReply ? 2 : 1);
         },
+        removeMessage: (state, action: PayloadAction<{ sessionId: string; messageId: string }>) => {
+            const session = state.sessions[action.payload.sessionId];
+            if (!session) return;
+
+            session.messages = session.messages.filter((message) => message.id !== action.payload.messageId);
+        },
+        sendMessage: (
+            _state,
+            _action: PayloadAction<{
+                sessionId: string;
+                content: string;
+                selectedModelIds?: string[];
+                skipUserMessageAdd?: boolean;
+                assistantMessageId?: string;
+                contextEndIndexExclusive?: number;
+            }>
+        ) => {
+            // handled by saga
+        },
+        regenerateMessage: (
+            _state,
+            _action: PayloadAction<{ sessionId: string; messageId: string }>
+        ) => {
+            // handled by saga
+        },
         stopGenerating: () => {
             // handled by saga
         },
@@ -436,6 +470,9 @@ export const {
     removeAnnotationAndSubSession,
     removeSessionTree,
     removeTurn,
+    removeMessage,
+    sendMessage,
+    regenerateMessage,
     stopGenerating,
 } = sessionSlice.actions
 export default sessionSlice.reducer

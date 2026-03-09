@@ -4,6 +4,7 @@ import { rootSaga } from './rootSaga'
 import sessionReducer from './slices/sessionSlice'
 import configReducer from './slices/configSlice'
 import notesReducer from './slices/notesSlice'
+import { bindAiSagaStore } from './sagas/aiSaga'
 
 const sagaMiddleware = createSagaMiddleware()
 
@@ -17,6 +18,7 @@ export const store = configureStore({
         getDefaultMiddleware({ thunk: false }).concat(sagaMiddleware),
 })
 
+bindAiSagaStore(store)
 sagaMiddleware.run(rootSaga)
 
 export type RootState = ReturnType<typeof store.getState>

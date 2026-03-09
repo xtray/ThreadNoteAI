@@ -10,7 +10,9 @@ import { RootState } from './store'
 import { loadNotes, Note, setActiveNoteId } from './store/slices/notesSlice'
 import { BookOpenText, Download, MessageSquare, Plus, Settings, Trash2, Upload } from 'lucide-react'
 import NotebookViewer from './components/Notebook/NotebookViewer'
-import { buildChatSidebarResult, buildNoteSidebarResult, getSessionTitle } from './utils/sidebarSearch';
+import { buildChatSidebarResult, buildNoteSidebarResult, getSessionTitle, SidebarResult } from './utils/sidebarSearch';
+import { DEFAULT_SIDEBAR_WIDTH, clampSidebarWidth, loadSidebarWidth, saveSidebarWidth } from './utils/sidebarWidth';
+import { guardCtrlWheelZoom } from './utils/wheelZoomGuard';
 
 type WorkspaceMode = 'ai' | 'notebook';
 
@@ -23,6 +25,19 @@ type NotesExportManifest = {
 
 const CONTEXT_MENU_WIDTH = 180;
 const CONTEXT_MENU_MARGIN = 10;
+
+export const renderSidebarLabel = (itemId: string, result: SidebarResult) => (
+    <span className="history-item-label">
+        {result.segments.map((segment, index) => (
+            <span
+                key={`${itemId}-${index}`}
+                className={segment.matched ? 'history-item-highlight' : undefined}
+            >
+                {segment.text}
+            </span>
+        ))}
+    </span>
+);
 
 function App() {
     const dispatch = useDispatch();
@@ -54,7 +69,16 @@ function App() {
     const [notebookSettingsHint, setNotebookSettingsHint] = useState('');
     const [chatSearch, setChatSearch] = useState('');
     const [noteSearch, setNoteSearch] = useState('');
+    const [sidebarWidth, setSidebarWidth] = useState(() => {
+        if (typeof window === 'undefined') return DEFAULT_SIDEBAR_WIDTH;
+        return loadSidebarWidth(window.localStorage, window.innerWidth);
+    });
+    const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+    const sidebarWidthRef = useRef(sidebarWidth);
+    const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const sidebarRef = useRef<HTMLElement | null>(null);
+    const workspaceMainRef = useRef<HTMLElement | null>(null);
 
     const rootSessions = Object.values(sessions)
         .filter((s) => s.parentId === null)
@@ -108,6 +132,10 @@ function App() {
     };
 
     useEffect(() => {
+        sidebarWidthRef.current = sidebarWidth;
+    }, [sidebarWidth]);
+
+    useEffect(() => {
         const startup = async () => {
             try {
                 await initDB();
@@ -146,6 +174,81 @@ function App() {
             window.removeEventListener('scroll', closeMenus, true);
         };
     }, []);
+
+    useEffect(() => {
+        const sidebarElement = sidebarRef.current;
+        const workspaceElement = workspaceMainRef.current;
+        const elements = [sidebarElement, workspaceElement].filter((value): value is HTMLElement => value !== null);
+        if (elements.length === 0) return;
+
+        const handleWheel = (event: WheelEvent) => {
+            guardCtrlWheelZoom(event);
+        };
+
+        elements.forEach((element) => {
+            element.addEventListener('wheel', handleWheel, { passive: false });
+        });
+
+        return () => {
+            elements.forEach((element) => {
+                element.removeEventListener('wheel', handleWheel);
+            });
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!isSidebarResizing) return;
+
+        const handlePointerMove = (event: PointerEvent) => {
+            const resizeState = sidebarResizeRef.current;
+            if (!resizeState) return;
+            const nextWidth = clampSidebarWidth(
+                resizeState.startWidth + (event.clientX - resizeState.startX),
+                window.innerWidth
+            );
+            sidebarWidthRef.current = nextWidth;
+            setSidebarWidth(nextWidth);
+        };
+
+        const handlePointerUp = () => {
+            saveSidebarWidth(window.localStorage, sidebarWidthRef.current, window.innerWidth);
+            sidebarResizeRef.current = null;
+            setIsSidebarResizing(false);
+        };
+
+        document.body.classList.add('is-resizing-sidebar');
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+
+        return () => {
+            document.body.classList.remove('is-resizing-sidebar');
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+        };
+    }, [isSidebarResizing]);
+
+    useEffect(() => {
+        const handleWindowResize = () => {
+            const nextWidth = clampSidebarWidth(sidebarWidthRef.current, window.innerWidth);
+            if (nextWidth === sidebarWidthRef.current) return;
+            sidebarWidthRef.current = nextWidth;
+            setSidebarWidth(nextWidth);
+            saveSidebarWidth(window.localStorage, nextWidth, window.innerWidth);
+        };
+
+        window.addEventListener('resize', handleWindowResize);
+        return () => window.removeEventListener('resize', handleWindowResize);
+    }, []);
+
+    const handleSidebarResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        sidebarResizeRef.current = {
+            startX: event.clientX,
+            startWidth: sidebarWidthRef.current,
+        };
+        setIsSidebarResizing(true);
+    };
 
     const handleNewChat = () => {
         const id = Date.now().toString();
@@ -320,7 +423,7 @@ function App() {
 
     return (
         <div className="app-container">
-            <aside className="sidebar">
+            <aside ref={sidebarRef} className="sidebar" style={{ width: `${sidebarWidth}px` }}>
                 <h1>ThreadNote AI</h1>
                 <div className="left-mode-tabs">
                     <button
@@ -374,14 +477,7 @@ function App() {
                                         }}
                                         title={getSessionTitle(sessions[sessionId])}
                                     >
-                                        {result.segments.map((segment, index) => (
-                                            <span
-                                                key={`${sessionId}-${index}`}
-                                                className={segment.matched ? 'history-item-highlight' : undefined}
-                                            >
-                                                {segment.text}
-                                            </span>
-                                        ))}
+                                        {renderSidebarLabel(sessionId, result)}
                                     </button>
                                 ))
                             )}
@@ -428,14 +524,7 @@ function App() {
                                         }}
                                         title={notes[noteId]?.title ?? ''}
                                     >
-                                        {result.segments.map((segment, index) => (
-                                            <span
-                                                key={`${noteId}-${index}`}
-                                                className={segment.matched ? 'history-item-highlight' : undefined}
-                                            >
-                                                {segment.text}
-                                            </span>
-                                        ))}
+                                        {renderSidebarLabel(noteId, result)}
                                     </button>
                                 ))
                             )}
@@ -452,8 +541,15 @@ function App() {
                     </>
                 )}
             </aside>
+            <div
+                className={`sidebar-resize-handle ${isSidebarResizing ? 'is-active' : ''}`}
+                onPointerDown={handleSidebarResizeStart}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize sidebar"
+            />
             <main className="chat-main">
-                <section className="workspace-main">
+                <section ref={workspaceMainRef} className="workspace-main">
                     {workspaceMode === 'ai' ? (
                         <ChatContainer searchQuery={chatSearch} />
                     ) : (

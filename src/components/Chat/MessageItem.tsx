@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Message, spawnSession, addAnnotation, removeAnnotationAndSubSession, removeTurn } from '../../store/slices/sessionSlice';
+import { Message, spawnSession, addAnnotation, regenerateMessage, removeAnnotationAndSubSession, removeTurn } from '../../store/slices/sessionSlice';
 import { RootState } from '../../store';
 import FloatingOverlay from './FloatingOverlay';
 import MessageContent from './MessageContent';
 import TurnToolbar from './TurnToolbar';
+import type { TurnToolbarAction } from './TurnToolbar';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
 import { getModelDisplayName } from '../../utils/modelDisplay';
 import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, RotateCcw } from 'lucide-react';
 
 interface MessageItemProps {
     message: Message;
@@ -88,6 +89,39 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             copyResetTimerRef.current = null;
         }, 1500);
     };
+
+    const handleRegenerate = () => {
+        dispatch(regenerateMessage({
+            sessionId,
+            messageId: message.id,
+        }));
+    };
+
+    const assistantToolbarActions = useMemo(() => {
+        if (message.role !== 'assistant') return [];
+
+        const actions: TurnToolbarAction[] = [];
+        if (assistantTurnMarkdown) {
+            actions.push({
+                id: 'copy-turn-markdown',
+                label: copiedTurn ? 'Copied' : 'Copy',
+                icon: copiedTurn ? <Check size={14} /> : <Copy size={14} />,
+                onClick: handleCopyTurnMarkdown,
+                title: 'Copy question + answer as Markdown',
+            });
+        }
+
+        actions.push({
+            id: 'regenerate-turn',
+            label: 'Regenerate',
+            icon: <RotateCcw size={14} />,
+            onClick: handleRegenerate,
+            title: 'Regenerate this reply',
+            disabled: session?.isLoading,
+        });
+
+        return actions;
+    }, [assistantTurnMarkdown, copiedTurn, handleCopyTurnMarkdown, handleRegenerate, message.role, session?.isLoading]);
 
     const handleMouseUp = (e: React.MouseEvent) => {
         // Only allow sub-sessions on assistant messages
@@ -286,18 +320,10 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                     enableCodeBlockCopy={message.role === 'assistant'}
                     searchQuery={searchQuery}
                 />
-                {message.role === 'assistant' && assistantTurnMarkdown && (
+                {message.role === 'assistant' && (
                     <TurnToolbar
                         className="assistant-turn-toolbar"
-                        actions={[
-                            {
-                                id: 'copy-turn-markdown',
-                                label: copiedTurn ? 'Copied' : 'Copy',
-                                icon: copiedTurn ? <Check size={14} /> : <Copy size={14} />,
-                                onClick: handleCopyTurnMarkdown,
-                                title: 'Copy question + answer as Markdown',
-                            },
-                        ]}
+                        actions={assistantToolbarActions}
                     />
                 )}
             </div>
