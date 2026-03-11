@@ -2,17 +2,21 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import ChatContainer from './components/Chat/ChatContainer'
 import SettingsPanel from './components/Settings/SettingsPanel'
-import { initDB, loadAllNotes, loadAllSessions, resetSessionDB } from './utils/db'
+import SidebarTitleBar from './components/Settings/SidebarTitleBar'
+import { initDB, loadAllNotes, loadAllSessions, replaceAllSessionsData, resetSessionDB } from './utils/db'
 import { useDispatch, useSelector } from 'react-redux'
-import { loadConfig, toggleSettings } from './store/slices/configSlice'
+import { loadConfig, replaceAiConfig, toggleSettings } from './store/slices/configSlice'
 import { createSession, loadSessions, removeSessionTree, setActiveSession } from './store/slices/sessionSlice'
 import { RootState } from './store'
 import { loadNotes, Note, setActiveNoteId } from './store/slices/notesSlice'
-import { BookOpenText, Download, MessageSquare, Plus, Settings, Trash2, Upload } from 'lucide-react'
+import { BookOpenText, MessageSquare, Plus, Settings, Trash2 } from 'lucide-react'
 import NotebookViewer from './components/Notebook/NotebookViewer'
 import { buildChatSidebarResult, buildNoteSidebarResult, getSessionTitle, SidebarResult } from './utils/sidebarSearch';
 import { DEFAULT_SIDEBAR_WIDTH, clampSidebarWidth, loadSidebarWidth, saveSidebarWidth } from './utils/sidebarWidth';
 import { guardCtrlWheelZoom } from './utils/wheelZoomGuard';
+import { exportAiConfig, importAiConfigPayload } from './utils/aiConfigTransfer';
+import { exportAiChats, mergeImportedChats, overwriteImportedChats } from './utils/aiChatsTransfer';
+import type { SettingsAiTabId, SettingsPrimaryTabId } from './components/Settings/SettingsPanel';
 
 type WorkspaceMode = 'ai' | 'notebook';
 
@@ -43,6 +47,7 @@ function App() {
     const dispatch = useDispatch();
     const sessions = useSelector((state: RootState) => state.sessions.sessions);
     const activeSessionId = useSelector((state: RootState) => state.sessions.activeSessionId);
+    const config = useSelector((state: RootState) => state.config);
     const mainModelId = useSelector((state: RootState) => state.config.mainModelId);
     const notes = useSelector((state: RootState) => state.notes.notes);
     const activeNoteId = useSelector((state: RootState) => state.notes.activeNoteId);
@@ -65,8 +70,9 @@ function App() {
     const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
 
     const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('ai');
-    const [notebookSettingsOpen, setNotebookSettingsOpen] = useState(false);
     const [notebookSettingsHint, setNotebookSettingsHint] = useState('');
+    const [settingsPrimaryTab, setSettingsPrimaryTab] = useState<SettingsPrimaryTabId>('general');
+    const [settingsAiTab, setSettingsAiTab] = useState<SettingsAiTabId>('models');
     const [chatSearch, setChatSearch] = useState('');
     const [noteSearch, setNoteSearch] = useState('');
     const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -77,6 +83,9 @@ function App() {
     const sidebarWidthRef = useRef(sidebarWidth);
     const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const aiConfigImportRef = useRef<HTMLInputElement>(null);
+    const aiChatsOverwriteImportRef = useRef<HTMLInputElement>(null);
+    const aiChatsMergeImportRef = useRef<HTMLInputElement>(null);
     const sidebarRef = useRef<HTMLElement | null>(null);
     const workspaceMainRef = useRef<HTMLElement | null>(null);
 
@@ -129,6 +138,24 @@ function App() {
         a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    const downloadJsonFile = (payload: unknown, fileName: string) => {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const openUnifiedSettings = (primaryTab: SettingsPrimaryTabId, aiTab: SettingsAiTabId = 'models') => {
+        setSettingsPrimaryTab(primaryTab);
+        setSettingsAiTab(aiTab);
+        if (!config.settingsOpen) {
+            dispatch(toggleSettings());
+        }
     };
 
     useEffect(() => {
@@ -421,10 +448,89 @@ function App() {
         }
     };
 
+    const handleExportAiConfig = () => {
+        const payload = exportAiConfig(config);
+        downloadJsonFile(
+            payload,
+            `threadnote-ai-config-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+        );
+    };
+
+    const handleImportAiConfig = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        try {
+            const raw = await file.text();
+            const parsed = JSON.parse(raw);
+            const nextConfig = importAiConfigPayload(parsed, config);
+            dispatch(replaceAiConfig(nextConfig));
+        } catch (error) {
+            console.error('Failed to import AI config:', error);
+        }
+    };
+
+    const parseImportedSessions = (payload: unknown) => {
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Invalid AI chats payload');
+        }
+
+        const candidate = payload as {
+            sessions?: RootState['sessions']['sessions'];
+            activeSessionId?: string | null;
+        };
+
+        if (!candidate.sessions || typeof candidate.sessions !== 'object') {
+            throw new Error('Missing sessions payload');
+        }
+
+        return {
+            sessions: candidate.sessions,
+            activeSessionId: typeof candidate.activeSessionId === 'string' ? candidate.activeSessionId : null,
+        };
+    };
+
+    const handleExportAiChats = () => {
+        const payload = exportAiChats({
+            sessions,
+            activeSessionId,
+        });
+        downloadJsonFile(
+            payload,
+            `threadnote-ai-chats-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+        );
+    };
+
+    const handleImportAiChats = async (
+        event: React.ChangeEvent<HTMLInputElement>,
+        mode: 'overwrite' | 'merge'
+    ) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        try {
+            const raw = await file.text();
+            const parsed = JSON.parse(raw);
+            const importedState = parseImportedSessions(parsed);
+            const currentState = { sessions, activeSessionId };
+            const nextState = mode === 'overwrite'
+                ? overwriteImportedChats(currentState, importedState)
+                : mergeImportedChats(currentState, importedState);
+
+            dispatch(loadSessions(nextState.sessions));
+            dispatch(setActiveSession(nextState.activeSessionId));
+            await replaceAllSessionsData(nextState.sessions, nextState.activeSessionId);
+        } catch (error) {
+            console.error(`Failed to ${mode} AI chats import:`, error);
+        }
+    };
+
     return (
         <div className="app-container">
             <aside ref={sidebarRef} className="sidebar" style={{ width: `${sidebarWidth}px` }}>
-                <h1>ThreadNote AI</h1>
+                <SidebarTitleBar onOpenSettings={() => openUnifiedSettings('general')} />
                 <div className="left-mode-tabs">
                     <button
                         className={`left-mode-tab ${workspaceMode === 'ai' ? 'active' : ''}`}
@@ -487,7 +593,7 @@ function App() {
                             <Trash2 size={16} />
                             <span>Clear All Chats</span>
                         </button>
-                        <button className="settings-btn" onClick={() => dispatch(toggleSettings())}>
+                        <button className="settings-btn" onClick={() => openUnifiedSettings('ai', 'models')}>
                             <Settings size={18} />
                             <span>Settings</span>
                         </button>
@@ -534,7 +640,7 @@ function App() {
                             <Trash2 size={16} />
                             <span>Clear All Notes</span>
                         </button>
-                        <button className="settings-btn" onClick={() => setNotebookSettingsOpen(true)}>
+                        <button className="settings-btn" onClick={() => openUnifiedSettings('notebook')}>
                             <Settings size={18} />
                             <span>Settings</span>
                         </button>
@@ -557,7 +663,45 @@ function App() {
                     )}
                 </section>
             </main>
-            <SettingsPanel />
+            <SettingsPanel
+                initialPrimaryTab={settingsPrimaryTab}
+                initialAiTab={settingsAiTab}
+                notebookSettingsProps={{
+                    onExportAllNotes: handleExportAllNotes,
+                    onImportNotesClick: () => fileInputRef.current?.click(),
+                    importInputRef: fileInputRef,
+                    onImportNotesChange: handleImportNotes,
+                    hint: notebookSettingsHint,
+                }}
+                aiDataSettingsProps={{
+                    onExportAiConfig: handleExportAiConfig,
+                    onImportAiConfig: () => aiConfigImportRef.current?.click(),
+                    onExportAiChats: handleExportAiChats,
+                    onOverwriteAiChats: () => aiChatsOverwriteImportRef.current?.click(),
+                    onMergeAiChats: () => aiChatsMergeImportRef.current?.click(),
+                }}
+            />
+            <input
+                ref={aiConfigImportRef}
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                onChange={handleImportAiConfig}
+            />
+            <input
+                ref={aiChatsOverwriteImportRef}
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                onChange={(event) => void handleImportAiChats(event, 'overwrite')}
+            />
+            <input
+                ref={aiChatsMergeImportRef}
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                onChange={(event) => void handleImportAiChats(event, 'merge')}
+            />
 
             {historyMenu && (
                 <div
@@ -657,49 +801,6 @@ function App() {
                                 {isClearingNotes ? 'Clearing...' : 'Clear All'}
                             </button>
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {notebookSettingsOpen && (
-                <div className="settings-backdrop" onClick={() => setNotebookSettingsOpen(false)}>
-                    <div className="settings-panel note-settings-panel" onClick={(e) => e.stopPropagation()}>
-                        <div className="settings-header">
-                            <h2>Notebook Settings</h2>
-                            <button className="settings-close" onClick={() => setNotebookSettingsOpen(false)}>
-                                ×
-                            </button>
-                        </div>
-
-                        <section className="settings-section">
-                            <h3>Export</h3>
-                            <button className="note-settings-action" onClick={handleExportAllNotes}>
-                                <Download size={16} />
-                                <span>Export All Notes to Directory</span>
-                            </button>
-                        </section>
-
-                        <section className="settings-section">
-                            <h3>Import</h3>
-                            <button
-                                className="note-settings-action"
-                                onClick={() => fileInputRef.current?.click()}
-                            >
-                                <Upload size={16} />
-                                <span>Import Notes from Export File</span>
-                            </button>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept=".json,application/json"
-                                style={{ display: 'none' }}
-                                onChange={handleImportNotes}
-                            />
-                        </section>
-
-                        {notebookSettingsHint && (
-                            <div className="note-settings-hint">{notebookSettingsHint}</div>
-                        )}
                     </div>
                 </div>
             )}

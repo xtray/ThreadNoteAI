@@ -133,4 +133,59 @@ describe('configSlice multi-model settings', () => {
         expect(persisted.defaultMainModelIds).toEqual(['gpt-4o', 'deepseek-chat']);
         expect(persisted.mainModelId).toBe('gpt-4o');
     });
+
+    it('defaults themeEffect to light and persists valid theme updates', async () => {
+        const { reducer, storage } = await loadConfigSlice();
+
+        const start = reducer(undefined, { type: '@@INIT' });
+        expect(start.themeEffect).toBe('light');
+
+        const next = reducer(start, {
+            type: 'config/setThemeEffect',
+            payload: 'dark',
+        });
+
+        expect(next.themeEffect).toBe('dark');
+
+        const persisted = JSON.parse(storage[STORAGE_KEY]);
+        expect(persisted.themeEffect).toBe('dark');
+        expect(persisted.settingsOpen).toBeUndefined();
+    });
+
+    it('sanitizes invalid saved themeEffect values on load', async () => {
+        const { reducer } = await loadConfigSlice({
+            themeEffect: 'neon',
+        });
+
+        const state = reducer(undefined, { type: '@@INIT' });
+
+        expect(state.themeEffect).toBe('light');
+    });
+
+    it('replaces AI config state from an imported payload without reopening settings', async () => {
+        const { reducer } = await loadConfigSlice();
+
+        const start = reducer(undefined, { type: '@@INIT' });
+        const next = reducer(start, {
+            type: 'config/replaceAiConfig',
+            payload: {
+                apiKeys: { openai: 'sk-test' },
+                mainModelId: 'deepseek-chat',
+                maxConcurrentMainModels: 1,
+                defaultMainModelIds: ['deepseek-chat'],
+                subModelId: 'gpt-4o',
+                subSessionContextMode: 'keep',
+                customProviders: [],
+                themeEffect: 'dark',
+                settingsOpen: true,
+            },
+        });
+
+        expect(next.apiKeys).toEqual({ openai: 'sk-test' });
+        expect(next.mainModelId).toBe('deepseek-chat');
+        expect(next.defaultMainModelIds).toEqual(['deepseek-chat']);
+        expect(next.subSessionContextMode).toBe('keep');
+        expect(next.settingsOpen).toBe(false);
+        expect(next.themeEffect).toBe('light');
+    });
 });

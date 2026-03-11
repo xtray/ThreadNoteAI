@@ -7,6 +7,8 @@ import {
     sanitizeCustomProviders,
 } from '../../utils/customModels';
 
+export type ThemeEffect = 'light' | 'dark';
+
 export interface ConfigState {
     apiKeys: Record<string, string>;   // providerId → apiKey
     mainModelId: string;               // default model for main thread
@@ -15,6 +17,7 @@ export interface ConfigState {
     subModelId: string;                // default model for sub-thread
     subSessionContextMode: 'new' | 'keep';
     customProviders: CustomProviderConfig[];
+    themeEffect: ThemeEffect;
     settingsOpen: boolean;
 }
 
@@ -22,11 +25,15 @@ const STORAGE_KEY = 'threadnote_ai_config';
 const MIN_MAIN_MODEL_SLOTS = 1;
 const MAX_MAIN_MODEL_SLOTS = 3;
 const DEFAULT_MAIN_MODEL_SLOTS = 3;
+export const DEFAULT_THEME_EFFECT: ThemeEffect = 'light';
 
 type StoredConfig = Partial<ConfigState> & {
     maxConcurrentMainModels?: unknown;
     defaultMainModelIds?: unknown;
 };
+
+export const sanitizeThemeEffect = (value: unknown): ThemeEffect =>
+    value === 'dark' ? 'dark' : DEFAULT_THEME_EFFECT;
 
 const loadFromStorage = (): StoredConfig => {
     try {
@@ -64,6 +71,7 @@ const initialState: ConfigState = {
     subModelId: saved.subModelId ?? DEFAULT_MODEL_ID,
     subSessionContextMode: saved.subSessionContextMode ?? 'new',
     customProviders: sanitizeCustomProviders(saved.customProviders),
+    themeEffect: sanitizeThemeEffect(saved.themeEffect),
     settingsOpen: false,
 };
 
@@ -187,6 +195,32 @@ const configSlice = createSlice({
             state.subSessionContextMode = action.payload;
             persistConfig(state);
         },
+        setThemeEffect: (state, action: PayloadAction<ThemeEffect>) => {
+            state.themeEffect = sanitizeThemeEffect(action.payload);
+            persistConfig(state);
+        },
+        replaceAiConfig: (state, action: PayloadAction<Partial<ConfigState>>) => {
+            state.apiKeys = action.payload.apiKeys && typeof action.payload.apiKeys === 'object'
+                ? Object.fromEntries(
+                    Object.entries(action.payload.apiKeys).filter(
+                        (entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'
+                    )
+                )
+                : {};
+            state.subSessionContextMode = action.payload.subSessionContextMode === 'keep' ? 'keep' : 'new';
+            state.customProviders = sanitizeCustomProviders(action.payload.customProviders);
+            normalizeMainModelSettings(state, {
+                maxConcurrentMainModels: action.payload.maxConcurrentMainModels,
+                defaultMainModelIds: action.payload.defaultMainModelIds,
+                mainModelId: action.payload.mainModelId ?? DEFAULT_MODEL_ID,
+            });
+            state.subModelId = typeof action.payload.subModelId === 'string'
+                ? action.payload.subModelId
+                : state.subModelId;
+            ensureSelectedModels(state);
+            state.settingsOpen = false;
+            persistConfig(state);
+        },
         addCustomProvider: (state, action: PayloadAction<{ id?: string } | undefined>) => {
             const id = action.payload?.id || makeCustomProviderId('custom');
             state.customProviders.push({
@@ -279,6 +313,7 @@ const configSlice = createSlice({
             if (loaded.subModelId) state.subModelId = loaded.subModelId;
             if (loaded.subSessionContextMode) state.subSessionContextMode = loaded.subSessionContextMode;
             state.customProviders = sanitizeCustomProviders(loaded.customProviders);
+            state.themeEffect = sanitizeThemeEffect(loaded.themeEffect);
             normalizeMainModelSettings(state, {
                 maxConcurrentMainModels: loaded.maxConcurrentMainModels,
                 defaultMainModelIds: loaded.defaultMainModelIds,
@@ -299,6 +334,7 @@ function persistConfig(state: ConfigState) {
             subModelId,
             subSessionContextMode,
             customProviders,
+            themeEffect,
         } = state;
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
             apiKeys,
@@ -308,6 +344,7 @@ function persistConfig(state: ConfigState) {
             subModelId,
             subSessionContextMode,
             customProviders,
+            themeEffect,
         }));
     } catch { /* ignore */ }
 }
@@ -319,6 +356,8 @@ export const {
     setDefaultMainModelId,
     setSubModel,
     setSubSessionContextMode,
+    setThemeEffect,
+    replaceAiConfig,
     addCustomProvider,
     updateCustomProvider,
     removeCustomProvider,

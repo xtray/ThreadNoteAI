@@ -96,7 +96,40 @@ html,
 .sidebar h1 {
     font-size: 1.25rem;
     font-weight: 600;
-    margin-bottom: 2rem;
+    margin: 0;
+}
+
+.sidebar-title-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 1.25rem;
+}
+
+.sidebar-title-actions {
+    display: flex;
+    align-items: center;
+}
+
+.sidebar-title-settings-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.78);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.sidebar-title-settings-btn:hover {
+    border-color: rgba(0, 122, 255, 0.3);
+    background: rgba(0, 122, 255, 0.08);
+    color: var(--accent-color);
 }
 
 .new-chat-btn {
@@ -1353,6 +1386,10 @@ html,
     animation: scaleIn 0.25s ease-out;
 }
 
+.settings-panel-unified {
+    width: min(980px, calc(100vw - 48px));
+}
+
 @keyframes scaleIn {
     from {
         transform: scale(0.95);
@@ -1422,6 +1459,55 @@ html,
     color: var(--accent-color);
     border-color: rgba(0, 122, 255, 0.35);
     background: rgba(0, 122, 255, 0.08);
+}
+
+.settings-layout {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+}
+
+.settings-primary-tabs {
+    width: 170px;
+    padding: 16px;
+    border-right: 1px solid var(--border-color);
+    background: rgba(247, 250, 255, 0.72);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.settings-primary-tab {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 10px;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-primary-tab:hover {
+    background: rgba(0, 122, 255, 0.06);
+    color: var(--accent-color);
+}
+
+.settings-primary-tab.is-active {
+    background: rgba(0, 122, 255, 0.1);
+    color: var(--accent-color);
+    border-color: rgba(0, 122, 255, 0.18);
+}
+
+.settings-content-column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .settings-body {
@@ -1890,6 +1976,12 @@ html,
 .note-settings-action:hover {
     background: #f8fafc;
     border-color: #cbd5e1;
+}
+
+.settings-action-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .note-settings-hint {

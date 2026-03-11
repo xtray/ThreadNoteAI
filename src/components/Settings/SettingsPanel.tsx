@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
 import {
@@ -12,6 +12,7 @@ import {
     setMaxConcurrentMainModels,
     setSubSessionContextMode,
     setSubModel,
+    setThemeEffect,
     toggleSettings,
     updateCustomProvider,
     updateCustomProviderModel,
@@ -19,22 +20,44 @@ import {
 import { SUPPORTED_PROVIDERS, AVAILABLE_MODELS } from '../../utils/models';
 import { getCustomModelOptions } from '../../utils/customModels';
 import { X, Eye, EyeOff, Plus, Trash2, GripVertical, ChevronRight, Search } from 'lucide-react';
+import NotebookSettingsSection from './NotebookSettingsSection';
+import AiDataSettingsSection from './AiDataSettingsSection';
 
-export type SettingsTabId = 'models' | 'providers' | 'advanced';
+export type SettingsPrimaryTabId = 'general' | 'ai' | 'notebook';
+export type SettingsAiTabId = 'models' | 'providers' | 'advanced' | 'data';
 
-const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string }> = [
+const SETTINGS_PRIMARY_TABS: Array<{ id: SettingsPrimaryTabId; label: string }> = [
+    { id: 'general', label: 'General' },
+    { id: 'ai', label: 'AI' },
+    { id: 'notebook', label: 'Notebook' },
+];
+
+const SETTINGS_AI_TABS: Array<{ id: SettingsAiTabId; label: string }> = [
     { id: 'models', label: 'Models' },
     { id: 'providers', label: 'Providers' },
     { id: 'advanced', label: 'Advanced' },
+    { id: 'data', label: 'Data' },
 ];
 
 export const SettingsPanelContent: React.FC<{
-    activeTab: SettingsTabId;
+    activePrimaryTab: SettingsPrimaryTabId;
+    activeAiTab: SettingsAiTabId;
+    notebookSettingsProps?: React.ComponentProps<typeof NotebookSettingsSection>;
+    aiDataSettingsProps?: React.ComponentProps<typeof AiDataSettingsSection>;
     providerQuery?: string;
     collapsedProviderIds?: Set<string>;
     onProviderQueryChange?: (value: string) => void;
     onToggleProviderCollapse?: (providerId: string) => void;
-}> = ({ activeTab, providerQuery = '', collapsedProviderIds, onProviderQueryChange, onToggleProviderCollapse }) => {
+}> = ({
+    activePrimaryTab,
+    activeAiTab,
+    notebookSettingsProps,
+    aiDataSettingsProps,
+    providerQuery = '',
+    collapsedProviderIds,
+    onProviderQueryChange,
+    onToggleProviderCollapse,
+}) => {
     const dispatch = useDispatch();
     const config = useSelector((state: RootState) => state.config);
     const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
@@ -126,7 +149,38 @@ export const SettingsPanelContent: React.FC<{
         setDragOverModel(null);
     };
 
-    if (activeTab === 'models') {
+    if (activePrimaryTab === 'general') {
+        return (
+            <div className="settings-tab-panel" data-settings-primary-tab="general">
+                <section className="settings-section">
+                    <div className="settings-info-card">
+                        <strong>Global Preferences</strong>
+                        <p>Set app-wide options here. Theme selection is stored now and can power real themes later.</p>
+                    </div>
+                    <h3>Appearance</h3>
+                    <div className="settings-field">
+                        <label>Theme Effect</label>
+                        <p className="settings-field-hint">
+                            Dummy setting for now. It saves your choice but does not change the page theme yet.
+                        </p>
+                        <select
+                            value={config.themeEffect}
+                            onChange={(e) => dispatch(setThemeEffect(e.target.value as 'light' | 'dark'))}
+                        >
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </div>
+                </section>
+            </div>
+        );
+    }
+
+    if (activePrimaryTab === 'notebook') {
+        return <NotebookSettingsSection {...notebookSettingsProps} />;
+    }
+
+    if (activeAiTab === 'models') {
         return (
             <div className="settings-tab-panel" data-settings-tab="models">
                 <section className="settings-section">
@@ -240,7 +294,7 @@ export const SettingsPanelContent: React.FC<{
         );
     }
 
-    if (activeTab === 'providers') {
+    if (activeAiTab === 'providers') {
         return (
             <div className="settings-tab-panel" data-settings-tab="providers">
                 <section className="settings-section">
@@ -472,90 +526,139 @@ export const SettingsPanelContent: React.FC<{
         );
     }
 
-    return (
-        <div className="settings-tab-panel" data-settings-tab="advanced">
-            <section className="settings-section">
-                <div className="settings-info-card">
-                    <strong>Lower-Frequency Controls</strong>
-                    <p>Use this area for behavior tuning that affects branching and context carry-over.</p>
-                </div>
-                <h3>Advanced</h3>
-                <p className="settings-hint settings-advanced-hint">
-                    Controls how new sub-threads inherit context from the current conversation.
-                </p>
-                <div className="settings-field">
-                    <label>Sub-Session Context Mode</label>
-                    <div className="settings-option-help">
-                        <div><strong>New</strong> starts the sub-thread with only the anchor context.</div>
-                        <div><strong>Keep</strong> reuses the current thread history before branching.</div>
+    if (activeAiTab === 'advanced') {
+        return (
+            <div className="settings-tab-panel" data-settings-tab="advanced">
+                <section className="settings-section">
+                    <div className="settings-info-card">
+                        <strong>Lower-Frequency Controls</strong>
+                        <p>Use this area for behavior tuning that affects branching and context carry-over.</p>
                     </div>
-                    <select
-                        value={config.subSessionContextMode}
-                        onChange={(e) => dispatch(setSubSessionContextMode(e.target.value as 'new' | 'keep'))}
-                    >
-                        <option value="new">New</option>
-                        <option value="keep">Keep</option>
-                    </select>
-                </div>
-            </section>
-        </div>
-    );
+                    <h3>Advanced</h3>
+                    <p className="settings-hint settings-advanced-hint">
+                        Controls how new sub-threads inherit context from the current conversation.
+                    </p>
+                    <div className="settings-field">
+                        <label>Sub-Session Context Mode</label>
+                        <div className="settings-option-help">
+                            <div><strong>New</strong> starts the sub-thread with only the anchor context.</div>
+                            <div><strong>Keep</strong> reuses the current thread history before branching.</div>
+                        </div>
+                        <select
+                            value={config.subSessionContextMode}
+                            onChange={(e) => dispatch(setSubSessionContextMode(e.target.value as 'new' | 'keep'))}
+                        >
+                            <option value="new">New</option>
+                            <option value="keep">Keep</option>
+                        </select>
+                    </div>
+                </section>
+            </div>
+        );
+    }
+
+    return <AiDataSettingsSection {...aiDataSettingsProps} />;
 };
 
-const SettingsPanel: React.FC = () => {
+const SettingsPanel: React.FC<{
+    initialPrimaryTab?: SettingsPrimaryTabId;
+    initialAiTab?: SettingsAiTabId;
+    notebookSettingsProps?: React.ComponentProps<typeof NotebookSettingsSection>;
+    aiDataSettingsProps?: React.ComponentProps<typeof AiDataSettingsSection>;
+}> = ({
+    initialPrimaryTab = 'general',
+    initialAiTab = 'models',
+    notebookSettingsProps,
+    aiDataSettingsProps,
+}) => {
     const dispatch = useDispatch();
     const config = useSelector((state: RootState) => state.config);
-    const [activeTab, setActiveTab] = useState<SettingsTabId>('models');
+    const [activePrimaryTab, setActivePrimaryTab] = useState<SettingsPrimaryTabId>(initialPrimaryTab);
+    const [activeAiTab, setActiveAiTab] = useState<SettingsAiTabId>(initialAiTab);
     const [providerQuery, setProviderQuery] = useState('');
     const [collapsedProviderIds, setCollapsedProviderIds] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        setActivePrimaryTab(initialPrimaryTab);
+    }, [initialPrimaryTab]);
+
+    useEffect(() => {
+        setActiveAiTab(initialAiTab);
+    }, [initialAiTab]);
 
     if (!config.settingsOpen) return null;
 
     return (
         <div className="settings-backdrop" onClick={() => dispatch(toggleSettings())}>
-            <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="settings-panel settings-panel-unified" onClick={(e) => e.stopPropagation()}>
                 <div className="settings-header">
                     <h2>⚙️ Settings</h2>
                     <button className="settings-close" onClick={() => dispatch(toggleSettings())}>
                         <X size={18} />
                     </button>
                 </div>
-                <div className="settings-tabs" role="tablist" aria-label="Settings categories">
-                    {SETTINGS_TABS.map((tab) => {
-                        const isActive = tab.id === activeTab;
-                        return (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={isActive}
-                                className={`settings-tab ${isActive ? 'is-active' : ''}`}
-                                onClick={() => setActiveTab(tab.id)}
-                            >
-                                {tab.label}
-                            </button>
-                        );
-                    })}
-                </div>
+                <div className="settings-layout">
+                    <div className="settings-primary-tabs" role="tablist" aria-label="Settings sections">
+                        {SETTINGS_PRIMARY_TABS.map((tab) => {
+                            const isActive = tab.id === activePrimaryTab;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    className={`settings-primary-tab ${isActive ? 'is-active' : ''}`}
+                                    onClick={() => setActivePrimaryTab(tab.id)}
+                                >
+                                    {tab.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="settings-content-column">
+                        {activePrimaryTab === 'ai' && (
+                            <div className="settings-tabs" role="tablist" aria-label="AI settings categories">
+                                {SETTINGS_AI_TABS.map((tab) => {
+                                    const isActive = tab.id === activeAiTab;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            role="tab"
+                                            aria-selected={isActive}
+                                            className={`settings-tab ${isActive ? 'is-active' : ''}`}
+                                            onClick={() => setActiveAiTab(tab.id)}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
 
-                <div className="settings-body">
-                    <SettingsPanelContent
-                        activeTab={activeTab}
-                        providerQuery={providerQuery}
-                        collapsedProviderIds={collapsedProviderIds}
-                        onProviderQueryChange={setProviderQuery}
-                        onToggleProviderCollapse={(providerId) => {
-                            setCollapsedProviderIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(providerId)) {
-                                    next.delete(providerId);
-                                } else {
-                                    next.add(providerId);
-                                }
-                                return next;
-                            });
-                        }}
-                    />
+                        <div className="settings-body">
+                            <SettingsPanelContent
+                                activePrimaryTab={activePrimaryTab}
+                                activeAiTab={activeAiTab}
+                                notebookSettingsProps={notebookSettingsProps}
+                                aiDataSettingsProps={aiDataSettingsProps}
+                                providerQuery={providerQuery}
+                                collapsedProviderIds={collapsedProviderIds}
+                                onProviderQueryChange={setProviderQuery}
+                                onToggleProviderCollapse={(providerId) => {
+                                    setCollapsedProviderIds((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(providerId)) {
+                                            next.delete(providerId);
+                                        } else {
+                                            next.add(providerId);
+                                        }
+                                        return next;
+                                    });
+                                }}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
