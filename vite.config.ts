@@ -1,6 +1,7 @@
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import { Readable } from 'node:stream'
+import { configDefaults } from 'vitest/config'
 
 const customProviderProxyPlugin = (): Plugin => ({
   name: 'threadnote-custom-provider-proxy',
@@ -60,6 +61,9 @@ const customProviderProxyPlugin = (): Plugin => ({
 export default defineConfig({
   base: './',
   plugins: [react(), customProviderProxyPlugin()],
+  test: {
+    exclude: [...configDefaults.exclude, '.worktrees/**'],
+  },
   server: {
     proxy: {
       // MiniMax API
