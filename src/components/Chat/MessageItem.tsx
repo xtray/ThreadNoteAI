@@ -6,6 +6,11 @@ import FloatingOverlay from './FloatingOverlay';
 import MessageContent from './MessageContent';
 import TurnToolbar from './TurnToolbar';
 import type { TurnToolbarAction } from './TurnToolbar';
+import {
+    buildSelectionHighlightRects,
+    shouldIgnoreSubSessionMouseUpStateReset,
+    shouldShowSubSessionOverlay,
+} from './subSessionSelection';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
 import { getModelDisplayName } from '../../utils/modelDisplay';
 import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
@@ -32,6 +37,12 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     // Selection popup state
     const [showOverlayBtn, setShowOverlayBtn] = useState(false);
     const [btnPosition, setBtnPosition] = useState({ top: 0, left: 0 });
+    const [selectionHighlightRects, setSelectionHighlightRects] = useState<Array<{
+        top: number;
+        left: number;
+        width: number;
+        height: number;
+    }>>([]);
     const [selectedText, setSelectedText] = useState('');
     const [copiedTurn, setCopiedTurn] = useState(false);
     const [contextMenu, setContextMenu] = useState<
@@ -127,21 +138,41 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         // Only allow sub-sessions on assistant messages
         if (message.role !== 'assistant') return;
 
-        // Don't trigger selection popup if clicking inside an annotation marker
         const target = e.target as HTMLElement;
-        if (target.closest('.annotation-highlight') || target.closest('.floating-overlay')) return;
-
         const selection = window.getSelection();
         const selected = selection?.toString().trim() || '';
-        if (selection && selected.length > 0) {
+        const selectionDecision = {
+            hasLocalSelection: !!selection && selected.length > 0,
+            targetInsideAnnotation: !!target.closest('.annotation-highlight'),
+            targetInsideFloatingOverlay: !!target.closest('.floating-overlay'),
+            targetInsideSubSessionButton: !!target.closest('.floating-subsession-btn'),
+        };
+        if (shouldIgnoreSubSessionMouseUpStateReset(selectionDecision)) {
+            return;
+        }
+        const shouldShowOverlay = shouldShowSubSessionOverlay({
+            ...selectionDecision,
+        });
+
+        if (shouldShowOverlay && selection) {
             const range = selection.getRangeAt(0);
             if (!contentRef.current?.contains(range.commonAncestorContainer)) {
                 setShowOverlayBtn(false);
+                setSelectionHighlightRects([]);
                 return;
             }
             const rect = range.getBoundingClientRect();
+            const highlightRects = buildSelectionHighlightRects(
+                Array.from(range.getClientRects()).map((clientRect) => ({
+                    top: clientRect.top,
+                    left: clientRect.left,
+                    width: clientRect.width,
+                    height: clientRect.height,
+                }))
+            );
 
             setSelectedText(selected);
+            setSelectionHighlightRects(highlightRects);
             setBtnPosition({
                 top: rect.top - 36,
                 left: rect.left + rect.width / 2,
@@ -149,6 +180,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             setShowOverlayBtn(true);
         } else {
             setShowOverlayBtn(false);
+            setSelectionHighlightRects([]);
         }
     };
 
@@ -189,6 +221,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         }));
 
         setShowOverlayBtn(false);
+        setSelectionHighlightRects([]);
         setExpandedSessionId(subSessionId);
 
         // Clear browser selection
@@ -328,9 +361,23 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                 )}
             </div>
 
+            {selectionHighlightRects.map((rect, index) => (
+                <div
+                    key={`${rect.top}-${rect.left}-${index}`}
+                    className="floating-selection-highlight"
+                    style={{
+                        top: rect.top,
+                        left: rect.left,
+                        width: rect.width,
+                        height: rect.height,
+                    }}
+                />
+            ))}
+
             {/* ─── Selection popup ─── */}
             {showOverlayBtn && (
                 <button
+                    type="button"
                     className="floating-subsession-btn"
                     style={{
                         position: 'fixed',
@@ -339,7 +386,14 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                         transform: 'translateX(-50%)',
                         zIndex: 1000,
                     }}
-                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    onMouseUp={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
                     onClick={handleCreateSubSession}
                 >
                     💬 Sub-session

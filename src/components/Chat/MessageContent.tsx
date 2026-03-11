@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChevronDown, ChevronRight, Brain, Check, Copy } from 'lucide-react';
@@ -6,6 +6,8 @@ import { MessageAnnotation } from '../../store/slices/sessionSlice';
 import { copyTextToClipboard } from './turnUtils';
 import { normalizeSearchQuery } from '../../utils/sidebarSearch';
 import { highlightReactNode, renderWithSearchHighlight } from '../../utils/searchHighlight';
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const extractNodeText = (value: React.ReactNode): string => {
@@ -187,10 +189,12 @@ const MessageContent: React.FC<MessageContentProps> = ({
         span.appendChild(bubble);
     };
 
-    useEffect(() => {
+    // Annotation highlights are injected into the rendered markdown DOM, so they
+    // must be re-applied after every React commit that can recreate that subtree.
+    useIsomorphicLayoutEffect(() => {
         removeInjectedHighlights();
         sortedAnnotations.forEach(injectHighlight);
-    }, [mainContent, normalizedSearchQuery, sortedAnnotations]);
+    });
 
     useEffect(() => {
         const closeContextMenu = () => setContextMenu(null);

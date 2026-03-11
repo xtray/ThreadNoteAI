@@ -445,7 +445,8 @@ html,
 }
 
 /* Make text selection visible on blue user bubble */
-.user .message-bubble ::selection {
+.user .message-bubble::selection,
+.user .message-bubble *::selection {
     background: rgba(255, 255, 255, 0.35);
     color: white;
 }
@@ -455,6 +456,26 @@ html,
     color: var(--text-primary);
     border-bottom-left-radius: 2px;
     border: 1px solid var(--border-color);
+}
+
+.assistant .message-bubble::selection,
+.assistant .message-bubble *::selection {
+    background: rgba(88, 121, 255, 0.36);
+    color: var(--text-primary);
+}
+
+.assistant .message-bubble::-moz-selection,
+.assistant .message-bubble *::-moz-selection {
+    background: rgba(88, 121, 255, 0.36);
+    color: var(--text-primary);
+}
+
+.floating-selection-highlight {
+    position: fixed;
+    background: rgba(88, 121, 255, 0.36);
+    border-radius: 2px;
+    pointer-events: none;
+    z-index: 999;
 }
 
 /* Floating Button */
