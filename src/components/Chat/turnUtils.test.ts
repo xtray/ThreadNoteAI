@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Message } from '../../store/slices/sessionSlice';
-import { buildTurnMarkdown, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
+import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
 
 const buildMessages = (): Message[] => ([
     { id: 'u1', role: 'user', content: 'What is RAG?', timestamp: 1 },
@@ -8,6 +8,10 @@ const buildMessages = (): Message[] => ([
     { id: 'u2', role: 'user', content: 'Give me examples', timestamp: 3 },
     { id: 'a2', role: 'assistant', content: '<think>hidden</think>\nSure, here are examples.', timestamp: 4 },
 ]);
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
 
 describe('turnUtils', () => {
     it('finds the nearest previous user question for an assistant reply', () => {
@@ -36,5 +40,44 @@ describe('turnUtils', () => {
         expect(markdown).toBe(
             '## Question\n\nWhat is RAG?\n\n## Answer (GPT-4o)\n\nRAG is retrieval augmented generation.\n'
         );
+    });
+
+    it('cleans up the temporary textarea when fallback copy throws', async () => {
+        const appendedNodes: unknown[] = [];
+        const removedNodes: unknown[] = [];
+        const textarea = {
+            value: '',
+            style: {} as Record<string, string>,
+            setAttribute: vi.fn(),
+            focus: vi.fn(),
+            select: vi.fn(),
+        };
+        const body = {
+            appendChild: vi.fn((node: unknown) => {
+                appendedNodes.push(node);
+            }),
+            removeChild: vi.fn((node: unknown) => {
+                removedNodes.push(node);
+            }),
+        };
+
+        vi.stubGlobal('navigator', {
+            clipboard: {
+                writeText: vi.fn().mockRejectedValue(new Error('clipboard denied')),
+            },
+        });
+        vi.stubGlobal('document', {
+            body,
+            createElement: vi.fn(() => textarea),
+            execCommand: vi.fn(() => {
+                throw new Error('copy failed');
+            }),
+        });
+
+        await expect(copyTextToClipboard('const x = 1;')).resolves.toBe(false);
+        expect(body.appendChild).toHaveBeenCalledWith(textarea);
+        expect(body.removeChild).toHaveBeenCalledWith(textarea);
+        expect(appendedNodes).toEqual([textarea]);
+        expect(removedNodes).toEqual([textarea]);
     });
 });

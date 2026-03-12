@@ -38,7 +38,12 @@ It supports:
 
 ### Sub-session
 - In AI reply, select text and create/open sub-session.
-- Sub-session has independent context from main thread.
+- Sub-session keeps its own conversation history, and can optionally reuse a snapshot of the main thread.
+- `New` means later questions in this sub-session use only the sub-session's own history.
+- `Keep` means later questions in this sub-session use `main thread snapshot at creation time + sub-session history`.
+- The `Keep` / `New` toggle inside a sub-session is a live switch for future turns, not a one-time choice.
+- If you switch from `Keep` to `New`, later turns stop including the main-thread snapshot, but existing sub-session history remains.
+- If you switch back to `Keep`, later turns include the same saved main-thread snapshot again, together with the full sub-session history accumulated so far.
 - In sub-session reply, right-click to `Add to note`.
 
 ### Notebook Tab
@@ -70,6 +75,7 @@ In AI tab, open `Settings`:
 - Configure API keys per provider.
 - Configure main thread model.
 - Configure sub-thread model.
+- Configure the default sub-session context mode for newly created sub-sessions.
 
 ### Main Chat Multi-model Logic
 - The app can send one main-chat question to 1 to 3 models in parallel.

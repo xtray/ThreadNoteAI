@@ -498,6 +498,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                 <MessageContent
                                     content={m.content}
                                     annotations={m.annotations}
+                                    enableCodeBlockCopy={m.role === 'assistant'}
                                 />
                                 {m.role === 'assistant' && turnMarkdown && (
                                     <TurnToolbar

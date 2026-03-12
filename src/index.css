@@ -511,22 +511,65 @@ html,
     z-index: 999;
 }
 
-/* Floating Button */
+/* Floating Selection Actions */
 .floating-subsession-btn {
-    background-color: #fff;
-    border: 1px solid var(--border-color);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    padding: 4px 12px;
-    border-radius: 100px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    white-space: nowrap;
+    display: flex;
     transition: transform 0.1s, box-shadow 0.1s;
 }
 
 .floating-subsession-btn:hover {
-    transform: translateX(-50%) scale(1.05);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+    transform: translateX(-50%) scale(1.02);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+.selection-floating-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    background-color: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border-radius: 18px;
+}
+
+.selection-floating-action-btn {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border-radius: 14px;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.selection-floating-action-btn.is-active {
+    width: auto;
+    min-width: 30px;
+    padding: 0 10px;
+    background: rgba(88, 121, 255, 0.12);
+}
+
+.selection-floating-action-btn:hover {
+    background: rgba(88, 121, 255, 0.12);
+}
+
+.selection-floating-action-btn:active {
+    background: rgba(88, 121, 255, 0.18);
+}
+
+.selection-floating-action-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 /* Floating Overlay */
@@ -586,23 +629,6 @@ html,
     height: 18px;
     cursor: nwse-resize;
     z-index: 10;
-}
-
-.overlay-resize-handle::after {
-    content: '';
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 8px;
-    height: 8px;
-    border-top: 2px solid rgba(0, 0, 0, 0.15);
-    border-left: 2px solid rgba(0, 0, 0, 0.15);
-    border-radius: 2px 0 0 0;
-    transition: border-color 0.15s;
-}
-
-.overlay-resize-handle:hover::after {
-    border-color: rgba(0, 0, 0, 0.4);
 }
 
 .overlay-header {
@@ -2170,6 +2196,9 @@ html,
     color: #f5f5f5;
     font-size: 0.72rem;
     cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
     transition: background 0.16s ease, border-color 0.16s ease;
 }
 

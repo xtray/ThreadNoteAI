@@ -11,6 +11,10 @@ import {
     shouldIgnoreSubSessionMouseUpStateReset,
     shouldShowSubSessionOverlay,
 } from './subSessionSelection';
+import {
+    createSelectionFloatingActions,
+    SelectionFloatingActionBar,
+} from './selectionFloatingActions';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
 import { getModelDisplayName } from '../../utils/modelDisplay';
 import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
@@ -44,6 +48,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         height: number;
     }>>([]);
     const [selectedText, setSelectedText] = useState('');
+    const [copiedSelection, setCopiedSelection] = useState(false);
     const [copiedTurn, setCopiedTurn] = useState(false);
     const [contextMenu, setContextMenu] = useState<
         { x: number; y: number; type: 'delete-turn' }
@@ -53,6 +58,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
     const contentRef = useRef<HTMLDivElement>(null);
     const copyResetTimerRef = useRef<number | null>(null);
+    const selectionCopyResetTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         const closeMenu = () => setContextMenu(null);
@@ -68,7 +74,20 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         if (copyResetTimerRef.current !== null) {
             window.clearTimeout(copyResetTimerRef.current);
         }
+        if (selectionCopyResetTimerRef.current !== null) {
+            window.clearTimeout(selectionCopyResetTimerRef.current);
+        }
     }, []);
+
+    const clearSelectionOverlay = () => {
+        setShowOverlayBtn(false);
+        setSelectionHighlightRects([]);
+        setCopiedSelection(false);
+        if (selectionCopyResetTimerRef.current !== null) {
+            window.clearTimeout(selectionCopyResetTimerRef.current);
+            selectionCopyResetTimerRef.current = null;
+        }
+    };
 
     const assistantTurnMarkdown = useMemo(() => {
         if (!session || message.role !== 'assistant') return null;
@@ -157,8 +176,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         if (shouldShowOverlay && selection) {
             const range = selection.getRangeAt(0);
             if (!contentRef.current?.contains(range.commonAncestorContainer)) {
-                setShowOverlayBtn(false);
-                setSelectionHighlightRects([]);
+                clearSelectionOverlay();
                 return;
             }
             const rect = range.getBoundingClientRect();
@@ -172,6 +190,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             );
 
             setSelectedText(selected);
+            setCopiedSelection(false);
             setSelectionHighlightRects(highlightRects);
             setBtnPosition({
                 top: rect.top - 36,
@@ -179,8 +198,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             });
             setShowOverlayBtn(true);
         } else {
-            setShowOverlayBtn(false);
-            setSelectionHighlightRects([]);
+            clearSelectionOverlay();
         }
     };
 
@@ -220,8 +238,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             }
         }));
 
-        setShowOverlayBtn(false);
-        setSelectionHighlightRects([]);
+        clearSelectionOverlay();
         setExpandedSessionId(subSessionId);
 
         // Clear browser selection
@@ -236,6 +253,24 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                 });
             });
         }
+    };
+
+    const handleCopySelection = async (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = selectedText.trim();
+        if (!text) return;
+        const copied = await copyTextToClipboard(text);
+        if (!copied) return;
+        setCopiedSelection(true);
+        if (selectionCopyResetTimerRef.current !== null) {
+            window.clearTimeout(selectionCopyResetTimerRef.current);
+        }
+        selectionCopyResetTimerRef.current = window.setTimeout(() => {
+            clearSelectionOverlay();
+            window.getSelection()?.removeAllRanges();
+            selectionCopyResetTimerRef.current = null;
+        }, 1500);
     };
 
     const handleOpenSession = (subSessionId: string) => {
@@ -253,6 +288,12 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             setExpandedSessionId(null);
         }
     };
+
+    const selectionFloatingActions = useMemo(() => createSelectionFloatingActions({
+        onCreateSubSession: handleCreateSubSession,
+        onCopySelection: handleCopySelection,
+        copiedSelection,
+    }), [copiedSelection, handleCreateSubSession, handleCopySelection]);
 
     const handleContextMenu = (e: React.MouseEvent) => {
         const isMainSession = session?.parentId === null;
@@ -376,8 +417,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
             {/* ─── Selection popup ─── */}
             {showOverlayBtn && (
-                <button
-                    type="button"
+                <div
                     className="floating-subsession-btn"
                     style={{
                         position: 'fixed',
@@ -394,10 +434,9 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                         e.preventDefault();
                         e.stopPropagation();
                     }}
-                    onClick={handleCreateSubSession}
                 >
-                    💬 Sub-session
-                </button>
+                    <SelectionFloatingActionBar actions={selectionFloatingActions} />
+                </div>
             )}
 
             {/* ─── Expanded overlay ─── */}

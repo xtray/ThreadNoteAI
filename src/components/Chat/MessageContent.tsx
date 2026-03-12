@@ -268,14 +268,17 @@ const MessageContent: React.FC<MessageContentProps> = ({
                         type="button"
                         className="code-block-copy-btn"
                         title="Copy code block"
-                        onMouseDown={(e) => {
+                        onPointerDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            void handleCopyCodeBlock(codeText, blockId);
                         }}
                         onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            void handleCopyCodeBlock(codeText, blockId);
+                            if (e.detail === 0) {
+                                void handleCopyCodeBlock(codeText, blockId);
+                            }
                         }}
                         onContextMenu={(e) => {
                             e.preventDefault();
