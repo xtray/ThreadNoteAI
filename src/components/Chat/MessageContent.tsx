@@ -194,7 +194,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
     useIsomorphicLayoutEffect(() => {
         removeInjectedHighlights();
         sortedAnnotations.forEach(injectHighlight);
-    });
+    }, [copiedCodeBlockId, enableCodeBlockCopy, mainContent, normalizedSearchQuery, sortedAnnotations]);
 
     useEffect(() => {
         const closeContextMenu = () => setContextMenu(null);
@@ -433,4 +433,4 @@ const MessageContent: React.FC<MessageContentProps> = ({
     );
 };
 
-export default MessageContent;
+export default React.memo(MessageContent);

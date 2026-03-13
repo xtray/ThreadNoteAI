@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Message, spawnSession, addAnnotation, regenerateMessage, removeAnnotationAndSubSession, removeTurn } from '../../store/slices/sessionSlice';
 import { RootState } from '../../store';
@@ -7,7 +7,6 @@ import MessageContent from './MessageContent';
 import TurnToolbar from './TurnToolbar';
 import type { TurnToolbarAction } from './TurnToolbar';
 import {
-    buildSelectionHighlightRects,
     shouldIgnoreSubSessionMouseUpStateReset,
     shouldShowSubSessionOverlay,
 } from './subSessionSelection';
@@ -44,12 +43,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     // Selection popup state
     const [showOverlayBtn, setShowOverlayBtn] = useState(false);
     const [btnPosition, setBtnPosition] = useState({ top: 0, left: 0 });
-    const [selectionHighlightRects, setSelectionHighlightRects] = useState<Array<{
-        top: number;
-        left: number;
-        width: number;
-        height: number;
-    }>>([]);
     const [selectedText, setSelectedText] = useState('');
     const [copiedSelection, setCopiedSelection] = useState(false);
     const [copiedTurn, setCopiedTurn] = useState(false);
@@ -65,11 +58,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
     useEffect(() => {
         const closeMenu = () => setContextMenu(null);
-        const closeOnScroll = () => {
-            closeMenu();
-            clearSelectionOverlay();
-            clearBrowserSelection(window.getSelection());
-        };
+        const closeOnScroll = () => closeMenu();
         window.addEventListener('click', closeMenu);
         window.addEventListener('scroll', closeOnScroll, true);
         return () => {
@@ -89,7 +78,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
     const clearSelectionOverlay = () => {
         setShowOverlayBtn(false);
-        setSelectionHighlightRects([]);
         setCopiedSelection(false);
         if (selectionCopyResetTimerRef.current !== null) {
             window.clearTimeout(selectionCopyResetTimerRef.current);
@@ -192,18 +180,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                 return;
             }
             const rect = range.getBoundingClientRect();
-            const highlightRects = buildSelectionHighlightRects(
-                Array.from(range.getClientRects()).map((clientRect) => ({
-                    top: clientRect.top,
-                    left: clientRect.left,
-                    width: clientRect.width,
-                    height: clientRect.height,
-                }))
-            );
-
             setSelectedText(selected);
             setCopiedSelection(false);
-            setSelectionHighlightRects(highlightRects);
             setBtnPosition({
                 top: rect.top - 36,
                 left: rect.left + rect.width / 2,
@@ -285,11 +263,11 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         }, getSelectionCopyDismissDelay('main-message'));
     };
 
-    const handleOpenSession = (subSessionId: string) => {
+    const handleOpenSession = useCallback((subSessionId: string) => {
         setExpandedSessionId(subSessionId);
-    };
+    }, []);
 
-    const handleDeleteSubSession = (annotationId: string, subSessionId: string) => {
+    const handleDeleteSubSession = useCallback((annotationId: string, subSessionId: string) => {
         dispatch(removeAnnotationAndSubSession({
             sessionId,
             messageId: message.id,
@@ -299,7 +277,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         if (expandedSessionId === subSessionId) {
             setExpandedSessionId(null);
         }
-    };
+    }, [dispatch, expandedSessionId, message.id, sessionId]);
 
     const selectionFloatingActions = useMemo(() => createSelectionFloatingActions({
         onCreateSubSession: handleCreateSubSession,
@@ -413,19 +391,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                     />
                 )}
             </div>
-
-            {selectionHighlightRects.map((rect, index) => (
-                <div
-                    key={`${rect.top}-${rect.left}-${index}`}
-                    className="floating-selection-highlight"
-                    style={{
-                        top: rect.top,
-                        left: rect.left,
-                        width: rect.width,
-                        height: rect.height,
-                    }}
-                />
-            ))}
 
             {/* ─── Selection popup ─── */}
             {showOverlayBtn && (

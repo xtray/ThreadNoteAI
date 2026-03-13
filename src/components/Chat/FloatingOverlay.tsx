@@ -9,14 +9,12 @@ import { removeTurn, updateSessionContextMode, updateSessionModel } from '../../
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
 import TurnToolbar from './TurnToolbar';
 import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
-import { buildSelectionHighlightRects } from './subSessionSelection';
 import {
     createCopyOnlySelectionFloatingActions,
     SelectionFloatingActionBar,
 } from './selectionFloatingActions';
 import {
     calculateOverlaySelectionActionPosition,
-    translateViewportRectsToOverlay,
 } from './overlaySelectionPosition';
 import {
     getSelectionCopyDismissDelay,
@@ -51,12 +49,6 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
     const [showSelectionActions, setShowSelectionActions] = useState(false);
     const [selectionActionPosition, setSelectionActionPosition] = useState({ top: 0, left: 0 });
-    const [selectionHighlightRects, setSelectionHighlightRects] = useState<Array<{
-        top: number;
-        left: number;
-        width: number;
-        height: number;
-    }>>([]);
     const [selectedText, setSelectedText] = useState('');
     const [copiedSelection, setCopiedSelection] = useState(false);
     const [contextMenu, setContextMenu] = useState<
@@ -153,7 +145,6 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
 
     const clearSelectionOverlay = useCallback(() => {
         setShowSelectionActions(false);
-        setSelectionHighlightRects([]);
         setSelectedText('');
         setCopiedSelection(false);
         if (selectionCopyResetTimerRef.current !== null) {
@@ -173,8 +164,6 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         };
         const closeOnScroll = () => {
             setContextMenu(null);
-            clearSelectionOverlay();
-            clearBrowserSelection(window.getSelection());
         };
         window.addEventListener('mousedown', closeOnLeftMouseDown, true);
         window.addEventListener('scroll', closeOnScroll, true);
@@ -382,22 +371,10 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         }
 
         const rect = range.getBoundingClientRect();
-        const highlightRects = translateViewportRectsToOverlay(
-            buildSelectionHighlightRects(
-                Array.from(range.getClientRects()).map((clientRect) => ({
-                    top: clientRect.top,
-                    left: clientRect.left,
-                    width: clientRect.width,
-                    height: clientRect.height,
-                }))
-            ),
-            overlayRect
-        );
         const actionPosition = calculateOverlaySelectionActionPosition(rect, overlayRect);
         setContextMenu(null);
         setSelectedText(excerpt);
         setCopiedSelection(false);
-        setSelectionHighlightRects(highlightRects);
         setSelectionActionPosition(actionPosition);
         setShowSelectionActions(true);
     }, [clearSelectionOverlay]);
@@ -646,21 +623,6 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                 )}
                 <div ref={messagesEndRef} />
             </div>
-
-            {selectionHighlightRects.map((rect, index) => (
-                <div
-                    key={`${rect.top}-${rect.left}-${index}`}
-                    className="floating-selection-highlight"
-                    style={{
-                        position: 'absolute',
-                        top: rect.top,
-                        left: rect.left,
-                        width: rect.width,
-                        height: rect.height,
-                        zIndex: 1,
-                    }}
-                />
-            ))}
 
             {showSelectionActions && (
                 <div

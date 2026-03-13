@@ -503,14 +503,6 @@ html,
     color: var(--text-primary);
 }
 
-.floating-selection-highlight {
-    position: fixed;
-    background: rgba(88, 121, 255, 0.36);
-    border-radius: 2px;
-    pointer-events: none;
-    z-index: 999;
-}
-
 /* Floating Selection Actions */
 .floating-subsession-btn {
     display: flex;
