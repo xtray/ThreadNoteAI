@@ -26,6 +26,13 @@ It supports:
 2. Built files are in `dist/`
 3. Deploy `dist/` with a static web server.
 
+### Offline Edge Extension Package
+1. Run `npm run pack`
+2. The command builds the extension and writes `artifacts/ThreadNoteAI-v<version>.zip`
+3. Send that zip file to your users
+4. Users unzip it, open `edge://extensions`, enable Developer mode, and choose `Load unpacked`
+5. Select the unzipped extension folder contents
+
 ## 5. Basic Usage
 ### AI Tab
 - Click `New Chat` to start.
