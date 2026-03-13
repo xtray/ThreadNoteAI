@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
 import { X, Send, Square, Maximize2, Minimize2, Check, Copy } from 'lucide-react';
@@ -9,6 +9,22 @@ import { removeTurn, updateSessionContextMode, updateSessionModel } from '../../
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
 import TurnToolbar from './TurnToolbar';
 import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
+import { buildSelectionHighlightRects } from './subSessionSelection';
+import {
+    createCopyOnlySelectionFloatingActions,
+    SelectionFloatingActionBar,
+} from './selectionFloatingActions';
+import {
+    calculateOverlaySelectionActionPosition,
+    translateViewportRectsToOverlay,
+} from './overlaySelectionPosition';
+import {
+    getSelectionCopyDismissDelay,
+    shouldDismissSelectionBeforeCopy,
+} from './selectionCopyBehavior';
+import { shouldPreserveSelectableReplyMouseDown } from './floatingOverlayInteraction';
+import { clearBrowserSelection } from './browserSelection';
+import { getTrimmedRangeText } from './rangeText';
 
 interface FloatingOverlayProps {
     sessionId: string;
@@ -17,6 +33,7 @@ interface FloatingOverlayProps {
 
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 250;
+type ResizeHandleCorner = 'top-left' | 'bottom-left';
 
 const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose }) => {
     const CONTEXT_MENU_WIDTH = 160;
@@ -32,6 +49,16 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const [size, setSize] = useState({ width: 380, height: 500 });
     const [isResizing, setIsResizing] = useState(false);
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+    const [showSelectionActions, setShowSelectionActions] = useState(false);
+    const [selectionActionPosition, setSelectionActionPosition] = useState({ top: 0, left: 0 });
+    const [selectionHighlightRects, setSelectionHighlightRects] = useState<Array<{
+        top: number;
+        left: number;
+        width: number;
+        height: number;
+    }>>([]);
+    const [selectedText, setSelectedText] = useState('');
+    const [copiedSelection, setCopiedSelection] = useState(false);
     const [contextMenu, setContextMenu] = useState<
         | { x: number; y: number; type: 'add-note'; selectedText: string; turnUserMessageId: string | null }
         | { x: number; y: number; type: 'delete-turn'; turnUserMessageId: string }
@@ -47,8 +74,15 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     } | null>(null);
     const overlayRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
-    const resizeStartRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
+    const resizeStartRef = useRef<{ x: number; y: number; w: number; h: number; corner: ResizeHandleCorner }>({
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+        corner: 'top-left',
+    });
     const copyResetTimerRef = useRef<number | null>(null);
+    const selectionCopyResetTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!session) {
@@ -112,26 +146,46 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         if (copyResetTimerRef.current !== null) {
             window.clearTimeout(copyResetTimerRef.current);
         }
+        if (selectionCopyResetTimerRef.current !== null) {
+            window.clearTimeout(selectionCopyResetTimerRef.current);
+        }
+    }, []);
+
+    const clearSelectionOverlay = useCallback(() => {
+        setShowSelectionActions(false);
+        setSelectionHighlightRects([]);
+        setSelectedText('');
+        setCopiedSelection(false);
+        if (selectionCopyResetTimerRef.current !== null) {
+            window.clearTimeout(selectionCopyResetTimerRef.current);
+            selectionCopyResetTimerRef.current = null;
+        }
     }, []);
 
     useEffect(() => {
         const closeOnLeftMouseDown = (event: MouseEvent) => {
             if (event.button !== 0) return;
             const target = event.target as HTMLElement | null;
-            if (target?.closest('.message-context-menu')) return;
+            if (shouldPreserveSelectableReplyMouseDown(target)) return;
             setContextMenu(null);
+            clearSelectionOverlay();
+            clearBrowserSelection(window.getSelection());
         };
-        const closeOnScroll = () => setContextMenu(null);
+        const closeOnScroll = () => {
+            setContextMenu(null);
+            clearSelectionOverlay();
+            clearBrowserSelection(window.getSelection());
+        };
         window.addEventListener('mousedown', closeOnLeftMouseDown, true);
         window.addEventListener('scroll', closeOnScroll, true);
         return () => {
             window.removeEventListener('mousedown', closeOnLeftMouseDown, true);
             window.removeEventListener('scroll', closeOnScroll, true);
         };
-    }, []);
+    }, [clearSelectionOverlay]);
 
     // ─── Drag-to-resize logic ───
-    const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    const handleResizeMouseDown = useCallback((corner: ResizeHandleCorner) => (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         setIsResizing(true);
@@ -140,6 +194,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
             y: e.clientY,
             w: size.width,
             h: size.height,
+            corner,
         };
     }, [size]);
 
@@ -147,10 +202,12 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         if (!isResizing) return;
 
         const handleMouseMove = (e: MouseEvent) => {
-            const { x, y, w, h } = resizeStartRef.current;
-            // Resize from top-left corner (overlay is positioned at right side)
+            const { x, y, w, h, corner } = resizeStartRef.current;
             const newW = Math.max(MIN_WIDTH, w - (e.clientX - x));
-            const newH = Math.max(MIN_HEIGHT, h - (e.clientY - y));
+            const nextHeightDelta = corner === 'top-left'
+                ? -(e.clientY - y)
+                : e.clientY - y;
+            const newH = Math.max(MIN_HEIGHT, h + nextHeightDelta);
             setSize({ width: newW, height: newH });
         };
 
@@ -234,7 +291,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
             updatedAt: Date.now(),
         }));
         dispatch(setActiveNoteId(noteId));
-        window.getSelection()?.removeAllRanges();
+        clearBrowserSelection(window.getSelection());
     }, [dispatch, getSessionTitle, notes, session]);
 
     const findTurnUserMessageId = useCallback((messageIndex: number) => {
@@ -279,13 +336,13 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
 
         const messageEl = e.currentTarget;
         const selection = window.getSelection();
-        const text = selection?.toString() || '';
         const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        const text = getTrimmedRangeText(range);
         const hasLocalSelection = !!range
-            && text.trim().length > 0
+            && text.length > 0
             && messageEl.contains(range.commonAncestorContainer);
         const excerpt = hasLocalSelection
-            ? text.trim()
+            ? text
             : messageContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim() || messageContent.trim();
         if (!excerpt) return;
 
@@ -295,34 +352,55 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const handleAssistantMessageMouseUp = useCallback((
         e: React.MouseEvent<HTMLDivElement>,
         messageContent: string,
-        messageIndex: number
+        _messageIndex: number
     ) => {
         const target = e.target as HTMLElement;
         if (target.closest('.annotation-highlight')) return;
 
         const messageEl = e.currentTarget;
         const selection = window.getSelection();
-        const text = selection?.toString() || '';
         const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        const text = getTrimmedRangeText(range);
         const hasLocalSelection = !!range
-            && text.trim().length > 0
+            && text.length > 0
             && messageEl.contains(range.commonAncestorContainer);
-        if (!hasLocalSelection) return;
+        if (!hasLocalSelection || !range) {
+            clearSelectionOverlay();
+            return;
+        }
 
-        const excerpt = text.trim() || messageContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim() || messageContent.trim();
-        if (!excerpt) return;
+        const excerpt = text || messageContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim() || messageContent.trim();
+        if (!excerpt) {
+            clearSelectionOverlay();
+            return;
+        }
+
+        const overlayRect = overlayRef.current?.getBoundingClientRect();
+        if (!overlayRect) {
+            clearSelectionOverlay();
+            return;
+        }
 
         const rect = range.getBoundingClientRect();
-        const maxX = window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN;
-        const adjustedX = Math.max(CONTEXT_MENU_MARGIN, Math.min(rect.left + rect.width / 2, maxX));
-        setContextMenu({
-            x: adjustedX,
-            y: Math.max(CONTEXT_MENU_MARGIN, rect.bottom + 8),
-            type: 'add-note',
-            selectedText: excerpt,
-            turnUserMessageId: findTurnUserMessageId(messageIndex),
-        });
-    }, [findTurnUserMessageId]);
+        const highlightRects = translateViewportRectsToOverlay(
+            buildSelectionHighlightRects(
+                Array.from(range.getClientRects()).map((clientRect) => ({
+                    top: clientRect.top,
+                    left: clientRect.left,
+                    width: clientRect.width,
+                    height: clientRect.height,
+                }))
+            ),
+            overlayRect
+        );
+        const actionPosition = calculateOverlaySelectionActionPosition(rect, overlayRect);
+        setContextMenu(null);
+        setSelectedText(excerpt);
+        setCopiedSelection(false);
+        setSelectionHighlightRects(highlightRects);
+        setSelectionActionPosition(actionPosition);
+        setShowSelectionActions(true);
+    }, [clearSelectionOverlay]);
 
     const handleUserMessageContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>, messageIndex: number) => {
         const turnUserMessageId = findTurnUserMessageId(messageIndex);
@@ -363,6 +441,43 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         }, 1500);
     }, []);
 
+    const handleCopySelection = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const text = selectedText.trim();
+        if (!text) return;
+
+        if (shouldDismissSelectionBeforeCopy('floating-overlay')) {
+            clearSelectionOverlay();
+            clearBrowserSelection(window.getSelection());
+        }
+
+        const copied = await copyTextToClipboard(text);
+        if (!copied) return;
+
+        const dismissDelay = getSelectionCopyDismissDelay('floating-overlay');
+        if (dismissDelay === 0) {
+            clearSelectionOverlay();
+            clearBrowserSelection(window.getSelection());
+            return;
+        }
+
+        setCopiedSelection(true);
+        if (selectionCopyResetTimerRef.current !== null) {
+            window.clearTimeout(selectionCopyResetTimerRef.current);
+        }
+        selectionCopyResetTimerRef.current = window.setTimeout(() => {
+            clearSelectionOverlay();
+            clearBrowserSelection(window.getSelection());
+            selectionCopyResetTimerRef.current = null;
+        }, dismissDelay);
+    }, [clearSelectionOverlay, selectedText]);
+
+    const selectionFloatingActions = useMemo(() => createCopyOnlySelectionFloatingActions({
+        onCopySelection: handleCopySelection,
+        copiedSelection,
+    }), [copiedSelection, handleCopySelection]);
+
     if (!session) return null;
 
     const anchorText = session.anchorText || '';
@@ -393,18 +508,24 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
             onMouseDownCapture={(e) => {
                 if (e.button !== 0 || !contextMenu) return;
                 const target = e.target as HTMLElement;
-                if (!target.closest('.message-context-menu')) {
+                if (!shouldPreserveSelectableReplyMouseDown(target)) {
                     setContextMenu(null);
                 }
             }}
             ref={overlayRef}
         >
-            {/* Resize handle (top-left corner) — only when not fullscreen */}
+            {/* Resize handles — only when not fullscreen */}
             {!isFullscreen && (
-                <div
-                    className="overlay-resize-handle"
-                    onMouseDown={handleResizeMouseDown}
-                />
+                <>
+                    <div
+                        className="overlay-resize-handle overlay-resize-handle-top-left"
+                        onMouseDown={handleResizeMouseDown('top-left')}
+                    />
+                    <div
+                        className="overlay-resize-handle overlay-resize-handle-bottom-left"
+                        onMouseDown={handleResizeMouseDown('bottom-left')}
+                    />
+                </>
             )}
 
             <div className="overlay-header">
@@ -483,7 +604,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                         return (
                             <div
                                 key={m.id}
-                                className={`overlay-message ${m.role}`}
+                                className={`overlay-message ${m.role}${m.role === 'assistant' ? ' overlay-message-selectable' : ''}`}
                                 onContextMenu={
                                     m.role === 'assistant'
                                         ? (e) => handleAssistantMessageContextMenu(e, m.content, index)
@@ -525,6 +646,44 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                 )}
                 <div ref={messagesEndRef} />
             </div>
+
+            {selectionHighlightRects.map((rect, index) => (
+                <div
+                    key={`${rect.top}-${rect.left}-${index}`}
+                    className="floating-selection-highlight"
+                    style={{
+                        position: 'absolute',
+                        top: rect.top,
+                        left: rect.left,
+                        width: rect.width,
+                        height: rect.height,
+                        zIndex: 1,
+                    }}
+                />
+            ))}
+
+            {showSelectionActions && (
+                <div
+                    className="floating-subsession-btn"
+                    style={{
+                        position: 'absolute',
+                        top: selectionActionPosition.top,
+                        left: selectionActionPosition.left,
+                        transform: 'translateX(-50%)',
+                        zIndex: 3100,
+                    }}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    onMouseUp={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                >
+                    <SelectionFloatingActionBar actions={selectionFloatingActions} />
+                </div>
+            )}
 
             <div className="overlay-input">
                 <textarea

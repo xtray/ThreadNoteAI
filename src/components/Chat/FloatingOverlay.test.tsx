@@ -44,13 +44,23 @@ const renderOverlay = (messages: Message[]) => {
 };
 
 describe('FloatingOverlay code block copy button', () => {
-    it('renders the top-left resize handle for non-fullscreen sub-sessions', () => {
+    it('marks assistant replies as selectable text targets in sub-sessions', () => {
         const html = renderOverlay([
             { id: 'u1', role: 'user', content: 'show code', timestamp: 1 },
             { id: 'a1', role: 'assistant', content: 'answer', timestamp: 2, modelId: 'deepseek-chat' },
         ]);
 
-        expect(html).toContain('overlay-resize-handle');
+        expect(html).toContain('overlay-message assistant overlay-message-selectable');
+    });
+
+    it('renders both left-side resize handles for non-fullscreen sub-sessions', () => {
+        const html = renderOverlay([
+            { id: 'u1', role: 'user', content: 'show code', timestamp: 1 },
+            { id: 'a1', role: 'assistant', content: 'answer', timestamp: 2, modelId: 'deepseek-chat' },
+        ]);
+
+        expect(html).toContain('overlay-resize-handle overlay-resize-handle-top-left');
+        expect(html).toContain('overlay-resize-handle overlay-resize-handle-bottom-left');
     });
 
     it('renders copy button for assistant fenced code blocks in sub-sessions', () => {

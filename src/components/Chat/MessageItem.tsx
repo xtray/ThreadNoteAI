@@ -15,10 +15,13 @@ import {
     createSelectionFloatingActions,
     SelectionFloatingActionBar,
 } from './selectionFloatingActions';
+import { getSelectionCopyDismissDelay } from './selectionCopyBehavior';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
 import { getModelDisplayName } from '../../utils/modelDisplay';
 import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
 import { Check, Copy, RotateCcw } from 'lucide-react';
+import { clearBrowserSelection } from './browserSelection';
+import { getTrimmedRangeText } from './rangeText';
 
 interface MessageItemProps {
     message: Message;
@@ -62,11 +65,16 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
     useEffect(() => {
         const closeMenu = () => setContextMenu(null);
+        const closeOnScroll = () => {
+            closeMenu();
+            clearSelectionOverlay();
+            clearBrowserSelection(window.getSelection());
+        };
         window.addEventListener('click', closeMenu);
-        window.addEventListener('scroll', closeMenu, true);
+        window.addEventListener('scroll', closeOnScroll, true);
         return () => {
             window.removeEventListener('click', closeMenu);
-            window.removeEventListener('scroll', closeMenu, true);
+            window.removeEventListener('scroll', closeOnScroll, true);
         };
     }, []);
 
@@ -159,7 +167,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
         const target = e.target as HTMLElement;
         const selection = window.getSelection();
-        const selected = selection?.toString().trim() || '';
+        const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        const selected = getTrimmedRangeText(range);
         const selectionDecision = {
             hasLocalSelection: !!selection && selected.length > 0,
             targetInsideAnnotation: !!target.closest('.annotation-highlight'),
@@ -174,7 +183,10 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         });
 
         if (shouldShowOverlay && selection) {
-            const range = selection.getRangeAt(0);
+            if (!range) {
+                clearSelectionOverlay();
+                return;
+            }
             if (!contentRef.current?.contains(range.commonAncestorContainer)) {
                 clearSelectionOverlay();
                 return;
@@ -242,7 +254,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         setExpandedSessionId(subSessionId);
 
         // Clear browser selection
-        window.getSelection()?.removeAllRanges();
+        clearBrowserSelection(window.getSelection());
 
         if (messageListEl && typeof preservedScrollTop === 'number') {
             // Keep viewport stable when annotation markup and overlay mount cause reflow.
@@ -268,9 +280,9 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         }
         selectionCopyResetTimerRef.current = window.setTimeout(() => {
             clearSelectionOverlay();
-            window.getSelection()?.removeAllRanges();
+            clearBrowserSelection(window.getSelection());
             selectionCopyResetTimerRef.current = null;
-        }, 1500);
+        }, getSelectionCopyDismissDelay('main-message'));
     };
 
     const handleOpenSession = (subSessionId: string) => {
@@ -311,10 +323,10 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
         if (message.role === 'assistant') {
             const selection = window.getSelection();
-            const text = selection?.toString() || '';
             const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+            const text = getTrimmedRangeText(range);
             const hasLocalSelection = !!range
-                && text.trim().length > 0
+                && text.length > 0
                 && !!contentRef.current?.contains(range.commonAncestorContainer);
             const excerpt = hasLocalSelection
                 ? text
@@ -369,7 +381,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             updatedAt: Date.now(),
         }));
         dispatch(setActiveNoteId(noteId));
-        window.getSelection()?.removeAllRanges();
+        clearBrowserSelection(window.getSelection());
     };
 
     return (

@@ -620,15 +620,23 @@ html,
     }
 }
 
-/* Resize handle (top-left corner) */
+/* Resize handles */
 .overlay-resize-handle {
     position: absolute;
-    top: 0;
     left: 0;
     width: 18px;
     height: 18px;
     cursor: nwse-resize;
     z-index: 10;
+}
+
+.overlay-resize-handle-top-left {
+    top: 0;
+}
+
+.overlay-resize-handle-bottom-left {
+    bottom: 0;
+    cursor: nesw-resize;
 }
 
 .overlay-header {
@@ -688,6 +696,12 @@ html,
     border-radius: 10px;
     font-size: 0.85rem;
     max-width: 85%;
+}
+
+.overlay-message-selectable {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
 }
 
 .overlay-message.user {

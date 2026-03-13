@@ -12,9 +12,10 @@ export type SelectionFloatingAction = {
 };
 
 type CreateSelectionFloatingActionsParams = {
-    onCreateSubSession: (event: React.MouseEvent<HTMLButtonElement>) => void;
+    onCreateSubSession?: (event: React.MouseEvent<HTMLButtonElement>) => void;
     onCopySelection: (event: React.MouseEvent<HTMLButtonElement>) => void;
     copiedSelection?: boolean;
+    includeCreateSubSession?: boolean;
 };
 
 type SelectionFloatingActionBarProps = {
@@ -25,24 +26,41 @@ export const createSelectionFloatingActions = ({
     onCreateSubSession,
     onCopySelection,
     copiedSelection = false,
-}: CreateSelectionFloatingActionsParams): SelectionFloatingAction[] => ([
-    {
-        id: 'copy-selection',
-        title: copiedSelection ? 'Copied' : 'Copy selected text',
-        ariaLabel: copiedSelection ? 'Copied' : 'Copy selected text',
-        label: copiedSelection ? 'Copied' : undefined,
-        isActive: copiedSelection,
-        icon: copiedSelection ? <Check size={16} /> : <Copy size={16} />,
-        onClick: onCopySelection,
-    },
-    {
-        id: 'create-sub-session',
-        title: 'Create sub-session dialog',
-        ariaLabel: 'Create sub-session dialog',
-        icon: <MessageCircle size={16} />,
-        onClick: onCreateSubSession,
-    },
-]);
+    includeCreateSubSession = true,
+}: CreateSelectionFloatingActionsParams): SelectionFloatingAction[] => {
+    const actions: SelectionFloatingAction[] = [
+        {
+            id: 'copy-selection',
+            title: copiedSelection ? 'Copied' : 'Copy selected text',
+            ariaLabel: copiedSelection ? 'Copied' : 'Copy selected text',
+            label: copiedSelection ? 'Copied' : undefined,
+            isActive: copiedSelection,
+            icon: copiedSelection ? <Check size={16} /> : <Copy size={16} />,
+            onClick: onCopySelection,
+        },
+    ];
+
+    if (includeCreateSubSession && onCreateSubSession) {
+        actions.push({
+            id: 'create-sub-session',
+            title: 'Create sub-session dialog',
+            ariaLabel: 'Create sub-session dialog',
+            icon: <MessageCircle size={16} />,
+            onClick: onCreateSubSession,
+        });
+    }
+
+    return actions;
+};
+
+export const createCopyOnlySelectionFloatingActions = ({
+    onCopySelection,
+    copiedSelection = false,
+}: Pick<CreateSelectionFloatingActionsParams, 'onCopySelection' | 'copiedSelection'>): SelectionFloatingAction[] => createSelectionFloatingActions({
+    onCopySelection,
+    copiedSelection,
+    includeCreateSubSession: false,
+});
 
 export const SelectionFloatingActionBar: React.FC<SelectionFloatingActionBarProps> = ({ actions }) => (
     <div className="selection-floating-actions" aria-label="Selection actions">

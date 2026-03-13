@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
     SelectionFloatingActionBar,
+    createCopyOnlySelectionFloatingActions,
     createSelectionFloatingActions,
 } from './selectionFloatingActions';
 
@@ -56,5 +57,31 @@ describe('selectionFloatingActions', () => {
         expect(html).toContain('Copied');
         expect(html).toContain('title="Copied"');
         expect(html).not.toContain('title="Copy selected text"');
+    });
+
+    it('builds a copy-only action set for sub-session text selection', () => {
+        const onCopy = () => undefined;
+
+        const actions = createCopyOnlySelectionFloatingActions({
+            onCopySelection: onCopy,
+        });
+
+        expect(actions).toHaveLength(1);
+        expect(actions[0].id).toBe('copy-selection');
+        expect(actions[0].onClick).toBe(onCopy);
+    });
+
+    it('renders a copy-only floating action bar without the sub-session button', () => {
+        const html = renderToStaticMarkup(
+            <SelectionFloatingActionBar
+                actions={createCopyOnlySelectionFloatingActions({
+                    onCopySelection: () => undefined,
+                })}
+            />
+        );
+
+        expect(html).toContain('selection-floating-actions');
+        expect(html).toContain('title="Copy selected text"');
+        expect(html).not.toContain('title="Create sub-session dialog"');
     });
 });
