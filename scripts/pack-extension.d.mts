@@ -7,6 +7,7 @@ export function getPackageReadmeTargets(rootDir: string): Array<{
     sourcePath: string;
     targetPath: string;
 }>;
+export function resolveArchiveVersion(packageVersion: string, releaseVersion?: string): string;
 export function packExtension(rootDir: string): Promise<{
     artifactDir: string;
     archivePath: string;

@@ -45,6 +45,11 @@ export const getPackageReadmeTargets = (rootDir) => [
     },
 ];
 
+export const resolveArchiveVersion = (packageVersion, releaseVersion = '') => {
+    const normalizedReleaseVersion = releaseVersion.trim().replace(/^v/, '');
+    return normalizedReleaseVersion || packageVersion;
+};
+
 const readPackageVersion = async (rootDir) => {
     const packageJsonPath = path.join(rootDir, 'package.json');
     const raw = await readFile(packageJsonPath, 'utf8');
@@ -93,7 +98,8 @@ export const packExtension = async (rootDir) => {
     const distDir = path.join(rootDir, 'dist');
     await assertDirectoryExists(distDir);
 
-    const version = await readPackageVersion(rootDir);
+    const packageVersion = await readPackageVersion(rootDir);
+    const version = resolveArchiveVersion(packageVersion, process.env.THREADNOTE_RELEASE_VERSION);
     const artifactDir = await ensureArtifactDirectory(rootDir);
     const archivePath = getArchivePath(rootDir, version);
 

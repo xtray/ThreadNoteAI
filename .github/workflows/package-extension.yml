@@ -30,6 +30,8 @@ jobs:
 
       - name: Build offline package
         run: npm run pack
+        env:
+          THREADNOTE_RELEASE_VERSION: ${{ github.ref_name }}
 
       - name: Upload offline package artifact
         uses: actions/upload-artifact@v4

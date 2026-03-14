@@ -8,11 +8,18 @@ import {
     getArtifactDirectory,
     getArchivePath,
     getPackageReadmeTargets,
+    resolveArchiveVersion,
 } from '../../scripts/pack-extension.mjs';
 
 describe('extension offline packaging helpers', () => {
     it('builds a versioned archive filename from package metadata', () => {
         expect(getArchiveFileName('1.2.3')).toBe('ThreadNoteAI-v1.2.3.zip');
+    });
+
+    it('prefers the release tag version when one is provided', () => {
+        expect(resolveArchiveVersion('1.2.3', 'v2.0.0')).toBe('2.0.0');
+        expect(resolveArchiveVersion('1.2.3', '2.1.0')).toBe('2.1.0');
+        expect(resolveArchiveVersion('1.2.3', '')).toBe('1.2.3');
     });
 
     it('derives archive paths under the artifacts directory', () => {
