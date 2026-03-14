@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
-import { X, Send, Square, Maximize2, Minimize2, Check, Copy } from 'lucide-react';
+import { X, Send, Square, Maximize2, Minimize2, Check, Copy, RotateCcw } from 'lucide-react';
 import MessageContent from './MessageContent';
 import { setActiveNoteId, upsertNote } from '../../store/slices/notesSlice';
 import { createPortal } from 'react-dom';
-import { removeTurn, updateSessionContextMode, updateSessionModel } from '../../store/slices/sessionSlice';
+import { regenerateMessage, removeTurn, updateSessionContextMode, updateSessionModel } from '../../store/slices/sessionSlice';
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
 import TurnToolbar from './TurnToolbar';
 import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripThinkBlocks } from './turnUtils';
@@ -418,6 +418,13 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         }, 1500);
     }, []);
 
+    const handleRegenerate = useCallback((messageId: string) => {
+        dispatch(regenerateMessage({
+            sessionId,
+            messageId,
+        }));
+    }, [dispatch, sessionId]);
+
     const handleCopySelection = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
         event.stopPropagation();
@@ -608,6 +615,14 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                                 icon: copiedMessageId === m.id ? <Check size={13} /> : <Copy size={13} />,
                                                 onClick: () => handleCopyAssistantTurnMarkdown(m.id, turnMarkdown),
                                                 title: 'Copy question + answer as Markdown',
+                                            },
+                                            {
+                                                id: `regenerate-turn-${m.id}`,
+                                                label: 'Regenerate',
+                                                icon: <RotateCcw size={13} />,
+                                                onClick: () => handleRegenerate(m.id),
+                                                title: 'Regenerate this reply',
+                                                disabled: session.isLoading,
                                             },
                                         ]}
                                     />

@@ -72,11 +72,29 @@ describe('FloatingOverlay code block copy button', () => {
         expect(html).toContain('code-block-copy-btn');
     });
 
+    it('renders copy and regenerate buttons for assistant replies in sub-sessions', () => {
+        const html = renderOverlay([
+            { id: 'u1', role: 'user', content: 'show code', timestamp: 1 },
+            { id: 'a1', role: 'assistant', content: 'answer', timestamp: 2, modelId: 'deepseek-chat' },
+        ]);
+
+        expect(html).toContain('>Copy<');
+        expect(html).toContain('>Regenerate<');
+    });
+
     it('does not render copy button for user fenced code blocks in sub-sessions', () => {
         const html = renderOverlay([
             { id: 'u1', role: 'user', content: '```ts\nconst x = 1;\n```', timestamp: 1 },
         ]);
 
         expect(html).not.toContain('code-block-copy-btn');
+    });
+
+    it('does not render regenerate button for user-only replies in sub-sessions', () => {
+        const html = renderOverlay([
+            { id: 'u1', role: 'user', content: 'only user message', timestamp: 1 },
+        ]);
+
+        expect(html).not.toContain('>Regenerate<');
     });
 });
