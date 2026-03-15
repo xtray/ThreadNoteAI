@@ -6,10 +6,10 @@ import { MessageAnnotation } from '../../store/slices/sessionSlice';
 import { copyTextToClipboard } from './turnUtils';
 import { normalizeSearchQuery } from '../../utils/sidebarSearch';
 import { highlightReactNode, renderWithSearchHighlight } from '../../utils/searchHighlight';
+import { findAnnotationMatch } from './annotationMatch';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const extractNodeText = (value: React.ReactNode): string => {
     if (typeof value === 'string' || typeof value === 'number') {
         return String(value);
@@ -130,16 +130,14 @@ const MessageContent: React.FC<MessageContentProps> = ({
         }
         if (segments.length === 0 || !fullText) return;
 
-        let matchStart = fullText.indexOf(anchorText);
-        let matchLength = anchorText.length;
-        if (matchStart < 0) {
-            const loosePattern = escapeRegExp(anchorText).replace(/\s+/g, '\\s+');
-            const looseRegex = new RegExp(loosePattern);
-            const looseMatch = looseRegex.exec(fullText);
-            if (!looseMatch || looseMatch.index < 0) return;
-            matchStart = looseMatch.index;
-            matchLength = looseMatch[0].length;
-        }
+        const match = findAnnotationMatch({
+            fullText,
+            anchorText,
+            anchorOccurrence: annotation.anchorOccurrence,
+        });
+        if (!match) return;
+        const matchStart = match.start;
+        const matchLength = match.length;
         const matchEnd = matchStart + matchLength;
 
         const resolvePoint = (pos: number, preferNextAtBoundary: boolean) => {

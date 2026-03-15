@@ -14,6 +14,7 @@ export interface MessageAnnotation {
     id: string;
     subSessionId: string;
     anchorText: string;
+    anchorOccurrence?: number;
     createdAt: number;
 }
 

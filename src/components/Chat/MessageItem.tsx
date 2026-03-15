@@ -22,6 +22,7 @@ import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripT
 import { Check, Copy, RotateCcw } from 'lucide-react';
 import { clearBrowserSelection } from './browserSelection';
 import { getTrimmedRangeText } from './rangeText';
+import { resolveSelectionAnchorOccurrence } from './selectionAnchorOccurrence';
 
 interface MessageItemProps {
     message: Message;
@@ -51,6 +52,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         height: number;
     }>>([]);
     const [selectedText, setSelectedText] = useState('');
+    const [selectedAnchorOccurrence, setSelectedAnchorOccurrence] = useState<number | null>(null);
     const [copiedSelection, setCopiedSelection] = useState(false);
     const [copiedTurn, setCopiedTurn] = useState(false);
     const [contextMenu, setContextMenu] = useState<
@@ -90,6 +92,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     const clearSelectionOverlay = () => {
         setShowOverlayBtn(false);
         setSelectionHighlightRects([]);
+        setSelectedAnchorOccurrence(null);
         setCopiedSelection(false);
         if (selectionCopyResetTimerRef.current !== null) {
             window.clearTimeout(selectionCopyResetTimerRef.current);
@@ -202,6 +205,11 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             );
 
             setSelectedText(selected);
+            setSelectedAnchorOccurrence(resolveSelectionAnchorOccurrence({
+                root: contentRef.current,
+                range,
+                anchorText: selected,
+            }));
             setCopiedSelection(false);
             setSelectionHighlightRects(highlightRects);
             setBtnPosition({
@@ -247,6 +255,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                 subSessionId,
                 anchorText: anchor,
                 createdAt: Date.now(),
+                ...(selectedAnchorOccurrence !== null ? { anchorOccurrence: selectedAnchorOccurrence } : {}),
             }
         }));
 
