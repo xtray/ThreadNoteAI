@@ -3,6 +3,7 @@
 ## Default Workflow
 - Use skill `using-superpowers` at conversation start.
 - Feature or behavior changes: run `brainstorming` -> `writing-plans` -> `test-driven-development` before implementation.
+- When adding new features, preserve existing behavior and avoid breaking existing features.
 - Bugfix/debug work: run `systematic-debugging` before proposing or applying fixes.
 - Before claiming completion: run `verification-before-completion`.
 
@@ -22,6 +23,7 @@
 
 ## Completion Gate
 - Run project verification commands (tests/lint/typecheck as applicable) and report results.
+- After code modifications, run `npm run build` to generate a fresh build and report the result.
 - If verification fails, report failures and do not claim "done".
 
 ## Finishing and Integration

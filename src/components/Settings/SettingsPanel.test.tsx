@@ -91,6 +91,8 @@ describe('SettingsPanel tabbed layout', () => {
 
         expect(html).toContain('Choose the default model mix for the main chat and sub-threads.');
         expect(html).toContain('Recommended');
+        expect(html).toContain('MiniMax M2.5');
+        expect(html).toContain('MiniMax M2.7');
     });
 
     it('filters provider content when a provider query is supplied', () => {

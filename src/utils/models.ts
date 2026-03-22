@@ -73,6 +73,8 @@ export const AVAILABLE_MODELS: Model[] = [
     // MiniMax
     { id: 'MiniMax-M2.7', providerId: 'minimax', name: 'MiniMax-M2.7', displayName: 'MiniMax M2.7' },
     { id: 'MiniMax-M2.7-highspeed', providerId: 'minimax', name: 'MiniMax-M2.7-highspeed', displayName: 'MiniMax M2.7 (Fast)' },
+    { id: 'MiniMax-M2.5', providerId: 'minimax', name: 'MiniMax-M2.5', displayName: 'MiniMax M2.5' },
+    { id: 'MiniMax-M2.5-highspeed', providerId: 'minimax', name: 'MiniMax-M2.5-highspeed', displayName: 'MiniMax M2.5 (Fast)' },
 
     // Zhipu GLM
     { id: 'glm-4-plus', providerId: 'zhipu', name: 'glm-4-plus', displayName: 'GLM-4 Plus' },

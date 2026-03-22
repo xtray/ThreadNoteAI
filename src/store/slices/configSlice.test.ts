@@ -50,6 +50,14 @@ afterEach(() => {
 });
 
 describe('configSlice multi-model settings', () => {
+    it('keeps MiniMax M2.7 as the default while exposing both MiniMax built-in series', () => {
+        expect(DEFAULT_MODEL_ID).toBe('MiniMax-M2.7');
+        expect(AVAILABLE_MODELS.some((model) => model.id === 'MiniMax-M2.5')).toBe(true);
+        expect(AVAILABLE_MODELS.some((model) => model.id === 'MiniMax-M2.5-highspeed')).toBe(true);
+        expect(AVAILABLE_MODELS.some((model) => model.id === 'MiniMax-M2.7')).toBe(true);
+        expect(AVAILABLE_MODELS.some((model) => model.id === 'MiniMax-M2.7-highspeed')).toBe(true);
+    });
+
     it('initializes new fields from legacy storage data', async () => {
         const { reducer } = await loadConfigSlice({
             mainModelId: 'deepseek-chat',
