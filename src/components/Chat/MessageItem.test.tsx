@@ -1,4 +1,5 @@
 import React from 'react';
+import fs from 'node:fs';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -67,5 +68,14 @@ describe('MessageItem regenerate action', () => {
         const html = renderMessageItem(messages[0], messages);
 
         expect(html).not.toContain('Regenerate');
+    });
+
+    it('requires confirmation before deleting a main-thread turn', () => {
+        const source = fs.readFileSync(new URL('./MessageItem.tsx', import.meta.url), 'utf8');
+
+        expect(source).toContain('const [deleteConfirm, setDeleteConfirm]');
+        expect(source).toContain('setDeleteConfirm({ sessionId, messageId: message.id })');
+        expect(source).toContain('dispatch(removeTurn(deleteConfirm))');
+        expect(source).toContain('<h3>Delete turn?</h3>');
     });
 });

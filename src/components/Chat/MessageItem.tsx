@@ -60,6 +60,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         | { x: number; y: number; type: 'add-note'; selectedText: string }
         | null
     >(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<{ sessionId: string; messageId: string } | null>(null);
 
     const contentRef = useRef<HTMLDivElement>(null);
     const copyResetTimerRef = useRef<number | null>(null);
@@ -482,8 +483,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                             className="danger-action"
                             type="button"
                             onClick={() => {
-                                dispatch(removeTurn({ sessionId, messageId: message.id }));
                                 setContextMenu(null);
+                                setDeleteConfirm({ sessionId, messageId: message.id });
                             }}
                         >
                             Delete
@@ -500,6 +501,36 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                             Add to note
                         </button>
                     )}
+                </div>
+            )}
+            {deleteConfirm && (
+                <div
+                    className="confirm-modal-backdrop"
+                    onClick={() => setDeleteConfirm(null)}
+                >
+                    <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3>Delete turn?</h3>
+                        <p>This will remove the selected question and its reply.</p>
+                        <div className="confirm-modal-actions">
+                            <button
+                                className="confirm-cancel-btn"
+                                type="button"
+                                onClick={() => setDeleteConfirm(null)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="confirm-danger-btn"
+                                type="button"
+                                onClick={() => {
+                                    dispatch(removeTurn(deleteConfirm));
+                                    setDeleteConfirm(null);
+                                }}
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

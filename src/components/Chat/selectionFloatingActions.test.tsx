@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
@@ -6,6 +7,8 @@ import {
     createCopyOnlySelectionFloatingActions,
     createSelectionFloatingActions,
 } from './selectionFloatingActions';
+
+const readIndexCss = () => readFileSync(new URL('../../index.css', import.meta.url), 'utf8');
 
 describe('selectionFloatingActions', () => {
     it('builds stable create and copy actions with the expected tooltip text', () => {
@@ -38,8 +41,9 @@ describe('selectionFloatingActions', () => {
 
         expect(html).toContain('selection-floating-actions');
         expect(html).toContain('selection-floating-action-btn');
-        expect(html).toContain('title="Create sub-session dialog"');
-        expect(html).toContain('title="Copy selected text"');
+        expect(html).toContain('selection-floating-action-tooltip');
+        expect(html).toContain('Create sub-session dialog');
+        expect(html).toContain('Copy selected text');
         expect(html).not.toContain('Sub-session');
     });
 
@@ -55,8 +59,8 @@ describe('selectionFloatingActions', () => {
         );
 
         expect(html).toContain('Copied');
-        expect(html).toContain('title="Copied"');
-        expect(html).not.toContain('title="Copy selected text"');
+        expect(html).toContain('selection-floating-action-tooltip');
+        expect(html).not.toContain('Copy selected text</span>');
     });
 
     it('builds a copy-only action set for sub-session text selection', () => {
@@ -81,7 +85,14 @@ describe('selectionFloatingActions', () => {
         );
 
         expect(html).toContain('selection-floating-actions');
-        expect(html).toContain('title="Copy selected text"');
-        expect(html).not.toContain('title="Create sub-session dialog"');
+        expect(html).toContain('selection-floating-action-tooltip');
+        expect(html).toContain('Copy selected text');
+        expect(html).not.toContain('Create sub-session dialog');
+    });
+
+    it('does not use the old diamond connector styling for the tooltip surface', () => {
+        const css = readIndexCss();
+
+        expect(css).not.toContain('.selection-floating-action-tooltip::after');
     });
 });

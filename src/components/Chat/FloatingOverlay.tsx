@@ -64,6 +64,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
         | { x: number; y: number; type: 'delete-turn'; turnUserMessageId: string }
         | null
     >(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<{ sessionId: string; messageId: string } | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const previousScrollStateRef = useRef<{
         sessionId: string;
@@ -750,10 +751,10 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                     type="button"
                                     onClick={() => {
                                         if (!contextMenu.turnUserMessageId) return;
-                                        dispatch(removeTurn({
+                                        setDeleteConfirm({
                                             sessionId,
                                             messageId: contextMenu.turnUserMessageId,
-                                        }));
+                                        });
                                         setContextMenu(null);
                                     }}
                                 >
@@ -766,16 +767,47 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                             className="danger-action"
                             type="button"
                             onClick={() => {
-                                dispatch(removeTurn({
+                                setDeleteConfirm({
                                     sessionId,
                                     messageId: contextMenu.turnUserMessageId,
-                                }));
+                                });
                                 setContextMenu(null);
                             }}
                         >
                             Delete turn
                         </button>
                     )}
+                </div>,
+                document.body
+            )}
+            {deleteConfirm && createPortal(
+                <div
+                    className="confirm-modal-backdrop"
+                    onClick={() => setDeleteConfirm(null)}
+                >
+                    <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3>Delete turn?</h3>
+                        <p>This will remove the selected question and its reply.</p>
+                        <div className="confirm-modal-actions">
+                            <button
+                                className="confirm-cancel-btn"
+                                type="button"
+                                onClick={() => setDeleteConfirm(null)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="confirm-danger-btn"
+                                type="button"
+                                onClick={() => {
+                                    dispatch(removeTurn(deleteConfirm));
+                                    setDeleteConfirm(null);
+                                }}
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
                 </div>,
                 document.body
             )}

@@ -1,4 +1,5 @@
 import React from 'react';
+import fs from 'node:fs';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -78,5 +79,14 @@ describe('FloatingOverlay code block copy button', () => {
         ]);
 
         expect(html).not.toContain('code-block-copy-btn');
+    });
+
+    it('requires confirmation before deleting a sub-thread turn', () => {
+        const source = fs.readFileSync(new URL('./FloatingOverlay.tsx', import.meta.url), 'utf8');
+
+        expect(source).toContain('const [deleteConfirm, setDeleteConfirm]');
+        expect(source).toContain('setDeleteConfirm({');
+        expect(source).toContain('dispatch(removeTurn(deleteConfirm))');
+        expect(source).toContain('<h3>Delete turn?</h3>');
     });
 });

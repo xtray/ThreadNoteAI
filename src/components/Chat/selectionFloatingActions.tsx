@@ -69,10 +69,12 @@ export const SelectionFloatingActionBar: React.FC<SelectionFloatingActionBarProp
                 key={action.id}
                 type="button"
                 className={`selection-floating-action-btn${action.isActive ? ' is-active' : ''}`}
-                title={action.title}
                 aria-label={action.ariaLabel}
                 onClick={action.onClick}
             >
+                <span className="selection-floating-action-tooltip" aria-hidden="true">
+                    {action.title}
+                </span>
                 {action.icon}
                 {action.label && (
                     <span className="selection-floating-action-label">{action.label}</span>

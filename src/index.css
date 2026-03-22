@@ -534,6 +534,7 @@ html,
 }
 
 .selection-floating-action-btn {
+    position: relative;
     width: 30px;
     height: 30px;
     min-width: 30px;
@@ -548,6 +549,42 @@ html,
     cursor: pointer;
     padding: 0;
     transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.selection-floating-action-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 10px);
+    transform: translate(-50%, 6px);
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
+    padding: 7px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+    color: #0f172a;
+    font-size: 0.74rem;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    z-index: 1;
+}
+
+[data-theme='dark'] .selection-floating-action-tooltip {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(24, 24, 28, 0.94);
+    color: #f8fafc;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+.selection-floating-action-btn:hover .selection-floating-action-tooltip,
+.selection-floating-action-btn:focus-visible .selection-floating-action-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
 }
 
 .selection-floating-action-btn.is-active {
