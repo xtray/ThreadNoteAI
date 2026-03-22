@@ -206,7 +206,10 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
 
             setSelectedText(selected);
             setSelectedAnchorOccurrence(resolveSelectionAnchorOccurrence({
-                root: contentRef.current,
+                // Use .markdown-body as root to match the same DOM scope
+                // that injectHighlight uses (markdownRef), so fullText and
+                // occurrence indices are consistent between selection and highlight.
+                root: contentRef.current?.querySelector('.markdown-body') as HTMLElement | null ?? contentRef.current,
                 range,
                 anchorText: selected,
             }));

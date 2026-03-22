@@ -112,7 +112,9 @@ const MessageContent: React.FC<MessageContentProps> = ({
                 if (!text.trim()) return NodeFilter.FILTER_SKIP;
                 const parent = (node as Text).parentElement;
                 if (!parent) return NodeFilter.FILTER_SKIP;
-                if (parent.closest('.annotation-highlight')) return NodeFilter.FILTER_SKIP;
+                // Include text nodes inside .annotation-highlight so that
+                // fullText stays consistent with resolveSelectionAnchorOccurrence
+                // and occurrence-based positioning remains accurate.
                 return NodeFilter.FILTER_ACCEPT;
             },
         });

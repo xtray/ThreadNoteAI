@@ -73,7 +73,9 @@ export const resolveSelectionAnchorOccurrence = ({
             if (!text.trim()) return NodeFilter.FILTER_SKIP;
             const parent = (node as Text).parentElement;
             if (!parent) return NodeFilter.FILTER_SKIP;
-            if (parent.closest('.annotation-highlight')) return NodeFilter.FILTER_SKIP;
+            // Include text nodes inside .annotation-highlight so that
+            // startContainer lookup succeeds when the user selects text
+            // that overlaps an already-injected highlight span.
             return NodeFilter.FILTER_ACCEPT;
         },
     });
