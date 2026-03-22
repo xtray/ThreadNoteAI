@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Note, upsertNote } from '../../store/slices/notesSlice';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import type { Components } from 'react-markdown';
 import { buildNoteSearchTarget, buildSearchHighlightSegments, normalizeSearchQuery } from '../../utils/sidebarSearch';
 import { highlightReactNode, renderWithSearchHighlight } from '../../utils/searchHighlight';
+import { RootState } from '../../store';
+import { getAppText } from '../../i18n/text';
 
 interface NotebookViewerProps {
     note: Note | null;
@@ -120,6 +122,8 @@ const toggleTaskStateAtIndex = (block: string, taskIndex: number): string => {
 
 const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' }) => {
     const dispatch = useDispatch();
+    const language = useSelector((state: RootState) => state.config.language);
+    const text = getAppText(language);
     const [blocks, setBlocks] = useState<string[]>(['']);
     const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null);
     const editorShellRef = useRef<HTMLDivElement>(null);
@@ -236,8 +240,8 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' 
     if (!note) {
         return (
             <div className="notebook-empty">
-                <h3>No note selected</h3>
-                <p>Right click an AI response selection and choose "Add to note" to create your first note.</p>
+                <h3>{text.noNoteSelected}</h3>
+                <p>{text.notebookEmptyHint}</p>
             </div>
         );
     }
@@ -325,7 +329,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' 
                                             }
                                         }}
                                         spellCheck={false}
-                                        placeholder="Write Markdown..."
+                                        placeholder={text.writeMarkdownPlaceholder}
                                     />
                                 ) : (
                                     <div

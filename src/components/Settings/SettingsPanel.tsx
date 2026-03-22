@@ -9,6 +9,7 @@ import {
     removeCustomProviderModel,
     setApiKey,
     setDefaultMainModelId,
+    setLanguage,
     setMaxConcurrentMainModels,
     setSubSessionContextMode,
     setSubModel,
@@ -19,6 +20,7 @@ import {
 } from '../../store/slices/configSlice';
 import { SUPPORTED_PROVIDERS, AVAILABLE_MODELS } from '../../utils/models';
 import { getCustomModelOptions } from '../../utils/customModels';
+import { getAppText } from '../../i18n/text';
 import { X, Eye, EyeOff, Plus, Trash2, GripVertical, ChevronRight, Search } from 'lucide-react';
 import NotebookSettingsSection from './NotebookSettingsSection';
 import AiDataSettingsSection from './AiDataSettingsSection';
@@ -26,18 +28,8 @@ import AiDataSettingsSection from './AiDataSettingsSection';
 export type SettingsPrimaryTabId = 'general' | 'ai' | 'notebook';
 export type SettingsAiTabId = 'models' | 'providers' | 'advanced' | 'data';
 
-const SETTINGS_PRIMARY_TABS: Array<{ id: SettingsPrimaryTabId; label: string }> = [
-    { id: 'general', label: 'General' },
-    { id: 'ai', label: 'AI' },
-    { id: 'notebook', label: 'Notebook' },
-];
-
-const SETTINGS_AI_TABS: Array<{ id: SettingsAiTabId; label: string }> = [
-    { id: 'models', label: 'Models' },
-    { id: 'providers', label: 'Providers' },
-    { id: 'advanced', label: 'Advanced' },
-    { id: 'data', label: 'Data' },
-];
+const SETTINGS_PRIMARY_TABS: SettingsPrimaryTabId[] = ['general', 'ai', 'notebook'];
+const SETTINGS_AI_TABS: SettingsAiTabId[] = ['models', 'providers', 'advanced', 'data'];
 
 export const SettingsPanelContent: React.FC<{
     activePrimaryTab: SettingsPrimaryTabId;
@@ -60,6 +52,7 @@ export const SettingsPanelContent: React.FC<{
 }) => {
     const dispatch = useDispatch();
     const config = useSelector((state: RootState) => state.config);
+    const text = getAppText(config.language);
     const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
     const [draggingModel, setDraggingModel] = useState<{ providerId: string; index: number } | null>(null);
     const [dragOverModel, setDragOverModel] = useState<{ providerId: string; index: number } | null>(null);
@@ -154,21 +147,31 @@ export const SettingsPanelContent: React.FC<{
             <div className="settings-tab-panel" data-settings-primary-tab="general">
                 <section className="settings-section">
                     <div className="settings-info-card">
-                        <strong>Global Preferences</strong>
-                        <p>Set app-wide options here. Theme selection is stored now and can power real themes later.</p>
+                        <strong>{text.globalPreferencesTitle}</strong>
+                        <p>{text.globalPreferencesHint}</p>
                     </div>
-                    <h3>Appearance</h3>
+                    <h3>{text.appearance}</h3>
                     <div className="settings-field">
-                        <label>Theme Effect</label>
+                        <label>{text.language}</label>
+                        <select
+                            value={config.language}
+                            onChange={(e) => dispatch(setLanguage(e.target.value as 'en' | 'zh'))}
+                        >
+                            <option value="en">{text.english}</option>
+                            <option value="zh">{text.chinese}</option>
+                        </select>
+                    </div>
+                    <div className="settings-field">
+                        <label>{text.themeEffect}</label>
                         <p className="settings-field-hint">
-                            Dummy setting for now. It saves your choice but does not change the page theme yet.
+                            {text.themeEffectHint}
                         </p>
                         <select
                             value={config.themeEffect}
                             onChange={(e) => dispatch(setThemeEffect(e.target.value as 'light' | 'dark'))}
                         >
-                            <option value="light">Light</option>
-                            <option value="dark">Dark</option>
+                            <option value="light">{text.light}</option>
+                            <option value="dark">{text.dark}</option>
                         </select>
                     </div>
                 </section>
@@ -177,7 +180,7 @@ export const SettingsPanelContent: React.FC<{
     }
 
     if (activePrimaryTab === 'notebook') {
-        return <NotebookSettingsSection {...notebookSettingsProps} />;
+        return <NotebookSettingsSection {...notebookSettingsProps} language={config.language} />;
     }
 
     if (activeAiTab === 'models') {
@@ -185,15 +188,15 @@ export const SettingsPanelContent: React.FC<{
             <div className="settings-tab-panel" data-settings-tab="models">
                 <section className="settings-section">
                     <div className="settings-info-card">
-                        <strong>Model Defaults</strong>
-                        <p>Choose the default model mix for the main chat and sub-threads.</p>
+                        <strong>{text.modelDefaultsTitle}</strong>
+                        <p>{text.modelDefaultsHint}</p>
                     </div>
-                    <h3>Model Configuration</h3>
+                    <h3>{text.modelConfiguration}</h3>
 
                     <div className="settings-field">
-                        <label>Main Window Concurrent Models</label>
+                        <label>{text.mainWindowConcurrentModels}</label>
                         <p className="settings-field-hint">
-                            Recommended: keep this at `2` or `3` only when you want side-by-side comparisons.
+                            {text.concurrentModelsHint}
                         </p>
                         <select
                             value={config.maxConcurrentMainModels}
@@ -208,9 +211,9 @@ export const SettingsPanelContent: React.FC<{
                     </div>
 
                     <div className="settings-field">
-                        <label>Default Main Models</label>
+                        <label>{text.defaultMainModels}</label>
                         <p className="settings-field-hint">
-                            Slot 1 acts as the primary default. Add a second or third slot only for deliberate multi-model use.
+                            {text.defaultMainModelsHint}
                         </p>
                         <div className="custom-model-list">
                             {Array.from({ length: config.maxConcurrentMainModels }, (_, slotIndex) => {
@@ -221,7 +224,7 @@ export const SettingsPanelContent: React.FC<{
 
                                 return (
                                     <div key={`main-model-slot-${slotIndex}`} className="custom-model-row">
-                                        <label>{`Slot ${slotIndex + 1}`}</label>
+                                        <label>{text.slotLabel(slotIndex)}</label>
                                         <select
                                             value={selectedId}
                                             onChange={(e) =>
@@ -231,7 +234,7 @@ export const SettingsPanelContent: React.FC<{
                                                 }))
                                             }
                                         >
-                                            <optgroup label="Built-in">
+                                            <optgroup label={text.builtIn}>
                                                 {AVAILABLE_MODELS.map((m) => (
                                                     <option
                                                         key={m.id}
@@ -243,7 +246,7 @@ export const SettingsPanelContent: React.FC<{
                                                 ))}
                                             </optgroup>
                                             {customModels.length > 0 && (
-                                                <optgroup label="Custom">
+                                                <optgroup label={text.custom}>
                                                     {customModels.map((m) => (
                                                         <option
                                                             key={m.id}
@@ -263,15 +266,15 @@ export const SettingsPanelContent: React.FC<{
                     </div>
 
                     <div className="settings-field">
-                        <label>Sub-thread Model</label>
+                        <label>{text.subThreadModel}</label>
                         <p className="settings-field-hint">
-                            Use a lighter model here if sub-threads are mostly exploratory.
+                            {text.subThreadModelHint}
                         </p>
                         <select
                             value={config.subModelId}
                             onChange={(e) => dispatch(setSubModel(e.target.value))}
                         >
-                            <optgroup label="Built-in">
+                            <optgroup label={text.builtIn}>
                                 {AVAILABLE_MODELS.map((m) => (
                                     <option key={m.id} value={m.id}>
                                         {m.displayName}
@@ -279,7 +282,7 @@ export const SettingsPanelContent: React.FC<{
                                 ))}
                             </optgroup>
                             {customModels.length > 0 && (
-                                <optgroup label="Custom">
+                                <optgroup label={text.custom}>
                                     {customModels.map((m) => (
                                         <option key={m.id} value={m.id}>
                                             {m.displayName}
@@ -300,10 +303,10 @@ export const SettingsPanelContent: React.FC<{
                 <section className="settings-section">
                     <div className="settings-search-row">
                         <div className="settings-search-header">
-                            <label className="settings-search-label" htmlFor="provider-search">Provider Search</label>
+                            <label className="settings-search-label" htmlFor="provider-search">{text.providerSearch}</label>
                             {normalizedProviderQuery && (
                                 <span className="settings-search-count">
-                                    {providerMatchCount} match{providerMatchCount === 1 ? '' : 'es'}
+                                    {text.providerMatchCount(providerMatchCount)}
                                 </span>
                             )}
                         </div>
@@ -315,7 +318,7 @@ export const SettingsPanelContent: React.FC<{
                                 type="text"
                                 value={providerQuery}
                                 onChange={(event) => onProviderQueryChange?.(event.target.value)}
-                                placeholder="Search provider or model"
+                                placeholder={text.providerSearchPlaceholder}
                             />
                             {normalizedProviderQuery && (
                                 <button
@@ -323,12 +326,12 @@ export const SettingsPanelContent: React.FC<{
                                     className="settings-search-clear"
                                     onClick={() => onProviderQueryChange?.('')}
                                 >
-                                    Clear search
+                                    {text.clearSearch}
                                 </button>
                             )}
                         </div>
                     </div>
-                    <h3>Built-in Provider API Keys</h3>
+                    <h3>{text.builtInProviderApiKeys}</h3>
                     {filteredBuiltInProviders.map((provider) => (
                         <div className="built-in-provider-card" key={provider.id}>
                             <div className="settings-field">
@@ -341,7 +344,7 @@ export const SettingsPanelContent: React.FC<{
                                         onChange={(e) =>
                                             dispatch(setApiKey({ providerId: provider.id, apiKey: e.target.value }))
                                         }
-                                        placeholder={`Enter ${provider.name} API Key`}
+                                        placeholder={text.enterProviderApiKey(provider.name)}
                                     />
                                     <button
                                         className="toggle-key-btn provider-action-btn"
@@ -357,27 +360,27 @@ export const SettingsPanelContent: React.FC<{
 
                 <section className="settings-section">
                     <div className="settings-inline-header">
-                        <h3>Custom Providers</h3>
+                        <h3>{text.customProviders}</h3>
                         <button
                             className="inline-add-btn provider-action-btn"
                             onClick={() => dispatch(addCustomProvider(undefined))}
                         >
                             <Plus size={14} />
-                            <span>Add Provider</span>
+                            <span>{text.addProvider}</span>
                         </button>
                     </div>
                     {filteredCustomProviders.length === 0 && (
                         <p className="settings-hint">
                             {normalizedProviderQuery
-                                ? 'No custom providers match the current search.'
-                                : 'Add custom OpenAI-compatible providers (for example, NVIDIA) with Base URL, API key and model names.'}
+                                ? text.noCustomProvidersMatch
+                                : text.customProvidersHint}
                         </p>
                     )}
                     {filteredCustomProviders.map((provider) => {
                         const matchesSearch = normalizedProviderQuery.length > 0;
                         const isCollapsed = matchesSearch ? false : collapsedProviderIds?.has(provider.id) ?? false;
                         const modelCount = provider.models.length;
-                        const summary = `${modelCount} model${modelCount === 1 ? '' : 's'}${provider.baseUrl ? ' · Base URL set' : ''}`;
+                        const summary = text.modelSummary(modelCount, !!provider.baseUrl);
 
                         return (
                             <div className={`custom-provider-card ${isCollapsed ? 'is-collapsed' : ''}`} key={provider.id}>
@@ -391,7 +394,7 @@ export const SettingsPanelContent: React.FC<{
                                             <ChevronRight size={14} />
                                         </span>
                                         <span>
-                                            <strong>{provider.name || 'Custom Provider'}</strong>
+                                            <strong>{provider.name || text.customProviderFallbackName}</strong>
                                             <span className="custom-provider-meta">{summary}</span>
                                         </span>
                                     </button>
@@ -399,7 +402,7 @@ export const SettingsPanelContent: React.FC<{
                                         type="button"
                                         className="inline-danger-btn provider-action-btn"
                                         onClick={() => dispatch(removeCustomProvider({ providerId: provider.id }))}
-                                        title="Remove provider"
+                                        title={text.removeProvider}
                                     >
                                         <Trash2 size={14} />
                                     </button>
@@ -408,7 +411,7 @@ export const SettingsPanelContent: React.FC<{
                                 {!isCollapsed && (
                                     <>
                                         <div className="settings-field">
-                                            <label>Provider Name</label>
+                                            <label>{text.providerName}</label>
                                             <input
                                                 className="provider-control-input"
                                                 type="text"
@@ -419,12 +422,12 @@ export const SettingsPanelContent: React.FC<{
                                                         changes: { name: e.target.value },
                                                     }))
                                                 }
-                                                placeholder="e.g. NVIDIA"
+                                                placeholder={text.providerNamePlaceholder}
                                             />
                                         </div>
 
                                         <div className="settings-field">
-                                            <label>Base URL</label>
+                                            <label>{text.baseUrl}</label>
                                             <input
                                                 className="provider-control-input"
                                                 type="text"
@@ -435,12 +438,12 @@ export const SettingsPanelContent: React.FC<{
                                                         changes: { baseUrl: e.target.value },
                                                     }))
                                                 }
-                                                placeholder="e.g. https://integrate.api.nvidia.com/v1"
+                                                placeholder={text.baseUrlPlaceholder}
                                             />
                                         </div>
 
                                         <div className="settings-field">
-                                            <label>API Key</label>
+                                            <label>{text.apiKey}</label>
                                             <div className="key-input-row">
                                                 <input
                                                     className="provider-control-input"
@@ -452,7 +455,7 @@ export const SettingsPanelContent: React.FC<{
                                                             changes: { apiKey: e.target.value },
                                                         }))
                                                     }
-                                                    placeholder="Enter API key"
+                                                    placeholder={text.enterApiKey}
                                                 />
                                                 <button
                                                     type="button"
@@ -465,7 +468,7 @@ export const SettingsPanelContent: React.FC<{
                                         </div>
 
                                         <div className="settings-field">
-                                            <label>Models</label>
+                                            <label>{text.modelsLabel}</label>
                                             <div className="custom-model-list">
                                                 {provider.models.map((modelName, index) => (
                                                     <div
@@ -476,7 +479,7 @@ export const SettingsPanelContent: React.FC<{
                                                         onDragOver={(event) => handleModelDragOver(provider.id, index, modelName, event)}
                                                         onDrop={(event) => handleModelDrop(provider.id, index, modelName, event)}
                                                         onDragEnd={handleModelDragEnd}
-                                                        title={isModelFilled(modelName) ? 'Drag to reorder' : 'Enter model name first'}
+                                                        title={isModelFilled(modelName) ? text.dragToReorder : text.enterModelNameFirst}
                                                     >
                                                         <span className="custom-model-drag-handle" aria-hidden="true">
                                                             <GripVertical size={14} />
@@ -492,7 +495,7 @@ export const SettingsPanelContent: React.FC<{
                                                                     modelName: e.target.value,
                                                                 }))
                                                             }
-                                                            placeholder="e.g. meta/llama-3.1-70b-instruct"
+                                                            placeholder={text.modelNamePlaceholder}
                                                         />
                                                         <button
                                                             type="button"
@@ -500,7 +503,7 @@ export const SettingsPanelContent: React.FC<{
                                                             onClick={() =>
                                                                 dispatch(removeCustomProviderModel({ providerId: provider.id, index }))
                                                             }
-                                                            title="Remove model"
+                                                            title={text.removeModel}
                                                         >
                                                             <Trash2 size={14} />
                                                         </button>
@@ -513,7 +516,7 @@ export const SettingsPanelContent: React.FC<{
                                                 onClick={() => dispatch(addCustomProviderModel({ providerId: provider.id }))}
                                             >
                                                 <Plus size={14} />
-                                                <span>Add Model</span>
+                                                <span>{text.addModel}</span>
                                             </button>
                                         </div>
                                     </>
@@ -531,25 +534,25 @@ export const SettingsPanelContent: React.FC<{
             <div className="settings-tab-panel" data-settings-tab="advanced">
                 <section className="settings-section">
                     <div className="settings-info-card">
-                        <strong>Lower-Frequency Controls</strong>
-                        <p>Use this area for behavior tuning that affects branching and context carry-over.</p>
+                        <strong>{text.lowFrequencyControlsTitle}</strong>
+                        <p>{text.lowFrequencyControlsHint}</p>
                     </div>
-                    <h3>Advanced</h3>
+                    <h3>{text.advanced}</h3>
                     <p className="settings-hint settings-advanced-hint">
-                        Controls how new sub-threads inherit context from the current conversation.
+                        {text.advancedHint}
                     </p>
                     <div className="settings-field">
-                        <label>Sub-Session Context Mode</label>
+                        <label>{text.subSessionContextMode}</label>
                         <div className="settings-option-help">
-                            <div><strong>New</strong> starts the sub-thread with only the anchor context.</div>
-                            <div><strong>Keep</strong> reuses the current thread history before branching.</div>
+                            <div><strong>{text.newMode}</strong> {text.newModeHint}</div>
+                            <div><strong>{text.keepMode}</strong> {text.keepModeHint}</div>
                         </div>
                         <select
                             value={config.subSessionContextMode}
                             onChange={(e) => dispatch(setSubSessionContextMode(e.target.value as 'new' | 'keep'))}
                         >
-                            <option value="new">New</option>
-                            <option value="keep">Keep</option>
+                            <option value="new">{text.newMode}</option>
+                            <option value="keep">{text.keepMode}</option>
                         </select>
                     </div>
                 </section>
@@ -557,7 +560,7 @@ export const SettingsPanelContent: React.FC<{
         );
     }
 
-    return <AiDataSettingsSection {...aiDataSettingsProps} />;
+    return <AiDataSettingsSection {...aiDataSettingsProps} language={config.language} />;
 };
 
 const SettingsPanel: React.FC<{
@@ -573,6 +576,7 @@ const SettingsPanel: React.FC<{
 }) => {
     const dispatch = useDispatch();
     const config = useSelector((state: RootState) => state.config);
+    const text = getAppText(config.language);
     const [activePrimaryTab, setActivePrimaryTab] = useState<SettingsPrimaryTabId>(initialPrimaryTab);
     const [activeAiTab, setActiveAiTab] = useState<SettingsAiTabId>(initialAiTab);
     const [providerQuery, setProviderQuery] = useState('');
@@ -592,44 +596,44 @@ const SettingsPanel: React.FC<{
         <div className="settings-backdrop" onClick={() => dispatch(toggleSettings())}>
             <div className="settings-panel settings-panel-unified" onClick={(e) => e.stopPropagation()}>
                 <div className="settings-header">
-                    <h2>⚙️ Settings</h2>
+                    <h2>{`⚙️ ${text.settingsTitle}`}</h2>
                     <button className="settings-close" onClick={() => dispatch(toggleSettings())}>
                         <X size={18} />
                     </button>
                 </div>
                 <div className="settings-layout">
-                    <div className="settings-primary-tabs" role="tablist" aria-label="Settings sections">
+                    <div className="settings-primary-tabs" role="tablist" aria-label={text.settingsSectionsLabel}>
                         {SETTINGS_PRIMARY_TABS.map((tab) => {
-                            const isActive = tab.id === activePrimaryTab;
+                            const isActive = tab === activePrimaryTab;
                             return (
                                 <button
-                                    key={tab.id}
+                                    key={tab}
                                     type="button"
                                     role="tab"
                                     aria-selected={isActive}
                                     className={`settings-primary-tab ${isActive ? 'is-active' : ''}`}
-                                    onClick={() => setActivePrimaryTab(tab.id)}
+                                    onClick={() => setActivePrimaryTab(tab)}
                                 >
-                                    {tab.label}
+                                    {text[tab]}
                                 </button>
                             );
                         })}
                     </div>
                     <div className="settings-content-column">
                         {activePrimaryTab === 'ai' && (
-                            <div className="settings-tabs" role="tablist" aria-label="AI settings categories">
+                            <div className="settings-tabs" role="tablist" aria-label={text.aiSettingsCategoriesLabel}>
                                 {SETTINGS_AI_TABS.map((tab) => {
-                                    const isActive = tab.id === activeAiTab;
+                                    const isActive = tab === activeAiTab;
                                     return (
                                         <button
-                                            key={tab.id}
+                                            key={tab}
                                             type="button"
                                             role="tab"
                                             aria-selected={isActive}
                                             className={`settings-tab ${isActive ? 'is-active' : ''}`}
-                                            onClick={() => setActiveAiTab(tab.id)}
+                                            onClick={() => setActiveAiTab(tab)}
                                         >
-                                            {tab.label}
+                                            {text[tab]}
                                         </button>
                                     );
                                 })}

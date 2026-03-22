@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { AVAILABLE_MODELS, DEFAULT_MODEL_ID } from '../../utils/models';
+import { AppLanguage, sanitizeAppLanguage } from '../../i18n/text';
 import {
     buildCustomModelId,
     CustomProviderConfig,
@@ -17,6 +18,7 @@ export interface ConfigState {
     subModelId: string;                // default model for sub-thread
     subSessionContextMode: 'new' | 'keep';
     customProviders: CustomProviderConfig[];
+    language: AppLanguage;
     themeEffect: ThemeEffect;
     settingsOpen: boolean;
 }
@@ -71,6 +73,7 @@ const initialState: ConfigState = {
     subModelId: saved.subModelId ?? DEFAULT_MODEL_ID,
     subSessionContextMode: saved.subSessionContextMode ?? 'new',
     customProviders: sanitizeCustomProviders(saved.customProviders),
+    language: sanitizeAppLanguage(saved.language),
     themeEffect: sanitizeThemeEffect(saved.themeEffect),
     settingsOpen: false,
 };
@@ -195,6 +198,10 @@ const configSlice = createSlice({
             state.subSessionContextMode = action.payload;
             persistConfig(state);
         },
+        setLanguage: (state, action: PayloadAction<AppLanguage>) => {
+            state.language = sanitizeAppLanguage(action.payload);
+            persistConfig(state);
+        },
         setThemeEffect: (state, action: PayloadAction<ThemeEffect>) => {
             state.themeEffect = sanitizeThemeEffect(action.payload);
             persistConfig(state);
@@ -217,6 +224,7 @@ const configSlice = createSlice({
             state.subModelId = typeof action.payload.subModelId === 'string'
                 ? action.payload.subModelId
                 : state.subModelId;
+            state.language = sanitizeAppLanguage(action.payload.language ?? state.language);
             ensureSelectedModels(state);
             state.settingsOpen = false;
             persistConfig(state);
@@ -313,6 +321,7 @@ const configSlice = createSlice({
             if (loaded.subModelId) state.subModelId = loaded.subModelId;
             if (loaded.subSessionContextMode) state.subSessionContextMode = loaded.subSessionContextMode;
             state.customProviders = sanitizeCustomProviders(loaded.customProviders);
+            state.language = sanitizeAppLanguage(loaded.language);
             state.themeEffect = sanitizeThemeEffect(loaded.themeEffect);
             normalizeMainModelSettings(state, {
                 maxConcurrentMainModels: loaded.maxConcurrentMainModels,
@@ -334,6 +343,7 @@ function persistConfig(state: ConfigState) {
             subModelId,
             subSessionContextMode,
             customProviders,
+            language,
             themeEffect,
         } = state;
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -344,6 +354,7 @@ function persistConfig(state: ConfigState) {
             subModelId,
             subSessionContextMode,
             customProviders,
+            language,
             themeEffect,
         }));
     } catch { /* ignore */ }
@@ -356,6 +367,7 @@ export const {
     setDefaultMainModelId,
     setSubModel,
     setSubSessionContextMode,
+    setLanguage,
     setThemeEffect,
     replaceAiConfig,
     addCustomProvider,

@@ -75,6 +75,17 @@ describe('selectionFloatingActions', () => {
         expect(actions[0].onClick).toBe(onCopy);
     });
 
+    it('builds translated action copy in chinese', () => {
+        const actions = createSelectionFloatingActions({
+            onCreateSubSession: () => undefined,
+            onCopySelection: () => undefined,
+            language: 'zh',
+        });
+
+        expect(actions[0].title).toBe('复制所选文本');
+        expect(actions[1].title).toBe('创建子会话对话框');
+    });
+
     it('renders a copy-only floating action bar without the sub-session button', () => {
         const html = renderToStaticMarkup(
             <SelectionFloatingActionBar

@@ -87,6 +87,6 @@ describe('FloatingOverlay code block copy button', () => {
         expect(source).toContain('const [deleteConfirm, setDeleteConfirm]');
         expect(source).toContain('setDeleteConfirm({');
         expect(source).toContain('dispatch(removeTurn(deleteConfirm))');
-        expect(source).toContain('<h3>Delete turn?</h3>');
+        expect(source).toContain('text.deleteTurnConfirmTitle');
     });
 });

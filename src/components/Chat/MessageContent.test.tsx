@@ -15,6 +15,18 @@ describe('MessageContent code block copy button', () => {
         expect(html).toContain('Copy');
     });
 
+    it('renders translated code copy text when language is zh', () => {
+        const html = renderToStaticMarkup(
+            <MessageContent
+                content={'```ts\nconst x = 1;\n```'}
+                enableCodeBlockCopy
+                language="zh"
+            />
+        );
+
+        expect(html).toContain('复制');
+    });
+
     it('does not render copy button for inline code', () => {
         const html = renderToStaticMarkup(
             <MessageContent

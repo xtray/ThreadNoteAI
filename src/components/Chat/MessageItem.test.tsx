@@ -87,7 +87,7 @@ describe('MessageItem regenerate action', () => {
         const source = fs.readFileSync(new URL('./MessageItem.tsx', import.meta.url), 'utf8');
 
         expect(source).toContain('showStaleTurnWarning');
-        expect(source).toContain('later turns may be stale');
+        expect(source).toContain('text.staleTurnWarning');
         expect(source).toContain('setShowStaleTurnWarning(true)');
         expect(source).toContain('window.setTimeout');
     });
@@ -98,6 +98,6 @@ describe('MessageItem regenerate action', () => {
         expect(source).toContain('const [deleteConfirm, setDeleteConfirm]');
         expect(source).toContain('setDeleteConfirm({ sessionId, messageId: message.id })');
         expect(source).toContain('dispatch(removeTurn(deleteConfirm))');
-        expect(source).toContain('<h3>Delete turn?</h3>');
+        expect(source).toContain('text.deleteTurnConfirmTitle');
     });
 });

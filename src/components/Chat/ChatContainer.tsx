@@ -17,6 +17,7 @@ import {
 import { Send, Square } from 'lucide-react';
 import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
 import { normalizeSearchQuery } from '../../utils/sidebarSearch';
+import { getAppText } from '../../i18n/text';
 
 interface ChatContainerProps {
     searchQuery?: string;
@@ -138,6 +139,8 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
     const maxConcurrentMainModels = useSelector((state: RootState) => state.config.maxConcurrentMainModels);
     const defaultMainModelIds = useSelector((state: RootState) => state.config.defaultMainModelIds);
     const customProviders = useSelector((state: RootState) => state.config.customProviders);
+    const language = useSelector((state: RootState) => state.config.language);
+    const text = getAppText(language);
     const modelOptions = getModelOptions(customProviders);
     const allModelOptions = useMemo(() => [...modelOptions.builtIn, ...modelOptions.custom], [modelOptions]);
     const maxSelectableMainModels = clampMainModelSlots(maxConcurrentMainModels);
@@ -386,32 +389,30 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                     aria-expanded={helpOpen}
                     aria-controls="welcome-help-panel"
                 >
-                    Help
+                    {text.help}
                 </button>
                 {helpOpen && (
-                    <div className="welcome-help-panel" id="welcome-help-panel" role="dialog" aria-label="Basic guide">
+                    <div className="welcome-help-panel" id="welcome-help-panel" role="dialog" aria-label={text.basicGuide}>
                         <button
                             className="welcome-help-close"
                             onClick={() => setHelpOpen(false)}
-                            aria-label="Close help"
+                            aria-label={text.closeHelp}
                         >
                             ×
                         </button>
-                        <h3>Basic Operations</h3>
+                        <h3>{text.basicOperations}</h3>
                         <ul>
-                            <li>Click Start New Chat to create a new conversation.</li>
-                            <li>Press Enter to send, Shift+Enter or Ctrl+J to insert a new line.</li>
-                            <li>Select text in an AI reply to create a nested sub-session.</li>
-                            <li>Use right-click actions to save reply snippets into Notebook.</li>
-                            <li>Switch to Notebook mode from the left panel to edit notes.</li>
+                            {text.basicOperationItems.map((item) => (
+                                <li key={item}>{item}</li>
+                            ))}
                         </ul>
                     </div>
                 )}
                 <div className="welcome-content">
-                    <h2>👋 Welcome to ThreadNote AI</h2>
-                    <p>Select a word in any AI response to create a nested sub-session.</p>
+                    <h2>{`👋 ${text.welcomeTitle}`}</h2>
+                    <p>{text.welcomeHint}</p>
                     <button className="start-chat-btn" onClick={handleNewChat}>
-                        Start New Chat
+                        {text.startNewChat}
                     </button>
                 </div>
             </div>
@@ -452,7 +453,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                         disabled={session.isLoading}
                         title={getModelDisplayName(session.modelId, customProviders)}
                     >
-                        <optgroup label="Built-in">
+                        <optgroup label={text.builtIn}>
                             {modelOptions.builtIn.map((m) => (
                                 <option key={m.id} value={m.id}>
                                     {m.displayName}
@@ -460,7 +461,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                             ))}
                         </optgroup>
                         {modelOptions.custom.length > 0 && (
-                            <optgroup label="Custom">
+                            <optgroup label={text.custom}>
                                 {modelOptions.custom.map((m) => (
                                     <option key={m.id} value={m.id}>
                                         {m.displayName}
@@ -470,7 +471,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                         )}
                     </select>
                 )}
-                {session.isLoading && <span className="loading-indicator">Thinking...</span>}
+                {session.isLoading && <span className="loading-indicator">{text.thinking}</span>}
             </div>
             {isRootSession && activeRound && (
                 <div className="multi-round-strip">
@@ -489,7 +490,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                                 >
                                     <span className={`reply-status-dot is-${status}`} />
                                     <span>{getModelDisplayName(modelId, customProviders)}</span>
-                                    {isPrimary && <span className="primary-pill">Primary</span>}
+                                    {isPrimary && <span className="primary-pill">{text.primary}</span>}
                                 </button>
                             );
                         })}
@@ -501,16 +502,16 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                             onClick={handleSetPrimary}
                             disabled={!activeTabModelId || session.multiModel?.primaryModelId === activeTabModelId}
                         >
-                            Set as primary
+                            {text.setAsPrimary}
                         </button>
                         <button
                             type="button"
                             className={`multi-reply-toggle${isMultiReplyEnabled ? ' is-on' : ''}`}
                             onClick={handleToggleMultiReply}
-                            title={isMultiReplyEnabled ? 'Multi-model replies enabled' : 'Primary-only replies enabled'}
+                            title={isMultiReplyEnabled ? text.multiReplyEnabledTitle : text.primaryOnlyRepliesTitle}
                         >
-                            <span className="toggle-pill-label">Multi Reply</span>
-                            <span className="toggle-pill-state">{isMultiReplyEnabled ? 'ON' : 'OFF'}</span>
+                            <span className="toggle-pill-label">{text.multiReply}</span>
+                            <span className="toggle-pill-state">{isMultiReplyEnabled ? text.on : text.off}</span>
                         </button>
                     </div>
                 </div>
@@ -548,7 +549,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                                             >
                                                 <span className={`reply-status-dot is-${status}`} />
                                                 <span>{getModelDisplayName(modelId, customProviders)}</span>
-                                                {isPrimary && <span className="primary-pill">Primary</span>}
+                                                {isPrimary && <span className="primary-pill">{text.primary}</span>}
                                             </button>
                                         );
                                     })}
@@ -582,7 +583,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                             handleSend();
                         }
                     }}
-                    placeholder="Type a message..."
+                    placeholder={text.mainChatPlaceholder}
                     disabled={session.isLoading}
                     rows={1}
                 />
@@ -590,12 +591,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
                     className={session.isLoading ? 'send-action-btn is-stop' : 'send-action-btn'}
                     onClick={session.isLoading ? handleStop : handleSend}
                     disabled={!session.isLoading && !inputText.trim()}
-                    title={session.isLoading ? 'Stop generating' : 'Send'}
+                    title={session.isLoading ? text.stop : text.send}
                 >
                     {session.isLoading ? (
                         <>
                             <Square size={14} />
-                            <span>Stop</span>
+                            <span>{text.stop}</span>
                         </>
                     ) : (
                         <Send size={18} />

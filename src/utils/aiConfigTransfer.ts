@@ -5,6 +5,7 @@ import {
     DEFAULT_THEME_EFFECT,
     sanitizeThemeEffect,
 } from '../store/slices/configSlice';
+import { sanitizeAppLanguage } from '../i18n/text';
 
 export type AiConfigExportPayload = {
     format: 'threadnote-ai-config-export';
@@ -157,6 +158,7 @@ export const importAiConfigPayload = (
         subModelId,
         subSessionContextMode: rawConfig?.subSessionContextMode === 'keep' ? 'keep' : 'new',
         customProviders,
+        language: sanitizeAppLanguage(rawConfig?.language ?? fallback.language),
         themeEffect: sanitizeThemeEffect(rawConfig?.themeEffect ?? DEFAULT_THEME_EFFECT),
         settingsOpen: false,
     };

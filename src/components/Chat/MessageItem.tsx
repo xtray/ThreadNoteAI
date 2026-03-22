@@ -23,6 +23,7 @@ import { Check, Copy, RotateCcw } from 'lucide-react';
 import { clearBrowserSelection } from './browserSelection';
 import { getTrimmedRangeText } from './rangeText';
 import { resolveSelectionAnchorOccurrence } from './selectionAnchorOccurrence';
+import { getAppText } from '../../i18n/text';
 
 interface MessageItemProps {
     message: Message;
@@ -51,6 +52,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     const subModelId = useSelector((state: RootState) => state.config.subModelId);
     const subSessionContextMode = useSelector((state: RootState) => state.config.subSessionContextMode);
     const customProviders = useSelector((state: RootState) => state.config.customProviders);
+    const language = useSelector((state: RootState) => state.config.language);
+    const text = getAppText(language);
     const session = useSelector((state: RootState) => state.sessions.sessions[sessionId]);
     const notes = useSelector((state: RootState) => state.notes.notes);
     const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
@@ -177,24 +180,24 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         if (assistantTurnMarkdown) {
             actions.push({
                 id: 'copy-turn-markdown',
-                label: copiedTurn ? 'Copied' : 'Copy',
+                label: copiedTurn ? text.copied : text.copy,
                 icon: copiedTurn ? <Check size={14} /> : <Copy size={14} />,
                 onClick: handleCopyTurnMarkdown,
-                title: 'Copy question + answer as Markdown',
+                title: text.copyTurnMarkdownTitle,
             });
         }
 
         actions.push({
             id: 'regenerate-turn',
-            label: 'Regenerate',
+            label: text.regenerate,
             icon: <RotateCcw size={14} />,
             onClick: handleRegenerate,
-            title: 'Regenerate this reply',
+            title: text.regenerateReplyTitle,
             disabled: session?.isLoading,
         });
 
         return actions;
-    }, [assistantTurnMarkdown, copiedTurn, handleCopyTurnMarkdown, handleRegenerate, message.role, session?.isLoading]);
+    }, [assistantTurnMarkdown, copiedTurn, handleCopyTurnMarkdown, handleRegenerate, message.role, session?.isLoading, text]);
 
     const handleMouseUp = (e: React.MouseEvent) => {
         // Only allow sub-sessions on assistant messages
@@ -349,7 +352,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         onCreateSubSession: handleCreateSubSession,
         onCopySelection: handleCopySelection,
         copiedSelection,
-    }), [copiedSelection, handleCreateSubSession, handleCopySelection]);
+        language,
+    }), [copiedSelection, handleCreateSubSession, handleCopySelection, language]);
 
     const handleContextMenu = (e: React.MouseEvent) => {
         const isMainSession = session?.parentId === null;
@@ -449,6 +453,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                     onDeleteSubSession={handleDeleteSubSession}
                     enableCodeBlockCopy={message.role === 'assistant'}
                     searchQuery={searchQuery}
+                    language={language}
                 />
                 {message.role === 'assistant' && (
                     <>
@@ -458,7 +463,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                         />
                         {showStaleTurnWarning && (
                             <div className="turn-stale-warning" role="status">
-                                Regenerated this reply; later turns may be stale.
+                                {text.staleTurnWarning}
                             </div>
                         )}
                     </>
@@ -498,7 +503,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                         e.stopPropagation();
                     }}
                 >
-                    <SelectionFloatingActionBar actions={selectionFloatingActions} />
+                    <SelectionFloatingActionBar actions={selectionFloatingActions} language={language} />
                 </div>
             )}
 
@@ -525,7 +530,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                                 setDeleteConfirm({ sessionId, messageId: message.id });
                             }}
                         >
-                            Delete
+                            {text.deleteTurn}
                         </button>
                     ) : (
                         <button
@@ -536,7 +541,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                                 setContextMenu(null);
                             }}
                         >
-                            Add to note
+                            {text.addToNote}
                         </button>
                     )}
                 </div>
@@ -547,15 +552,15 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                     onClick={() => setDeleteConfirm(null)}
                 >
                     <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-                        <h3>Delete turn?</h3>
-                        <p>This will remove the selected question and its reply.</p>
+                        <h3>{text.deleteTurnConfirmTitle}</h3>
+                        <p>{text.deleteTurnConfirmBody}</p>
                         <div className="confirm-modal-actions">
                             <button
                                 className="confirm-cancel-btn"
                                 type="button"
                                 onClick={() => setDeleteConfirm(null)}
                             >
-                                Cancel
+                                {text.cancel}
                             </button>
                             <button
                                 className="confirm-danger-btn"
@@ -565,7 +570,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                                     setDeleteConfirm(null);
                                 }}
                             >
-                                Delete
+                                {text.delete}
                             </button>
                         </div>
                     </div>

@@ -18,6 +18,7 @@ const buildConfig = (): ConfigState => ({
             models: ['meta/llama-3.1-70b-instruct'],
         },
     ],
+    language: 'en',
     themeEffect: 'dark',
     settingsOpen: true,
 });

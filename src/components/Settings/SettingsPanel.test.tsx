@@ -6,8 +6,9 @@ import sessionReducer from '../../store/slices/sessionSlice';
 import configReducer from '../../store/slices/configSlice';
 import notesReducer from '../../store/slices/notesSlice';
 import SettingsPanel, { SettingsPanelContent } from './SettingsPanel';
+import type { AppLanguage } from '../../i18n/text';
 
-const createPreloadedState = () => ({
+const createPreloadedState = (language: AppLanguage = 'en') => ({
     config: {
         apiKeys: {},
         mainModelId: 'MiniMax-M2.7',
@@ -15,6 +16,7 @@ const createPreloadedState = () => ({
         defaultMainModelIds: ['MiniMax-M2.7', 'deepseek-chat'],
         subModelId: 'gpt-4o',
         subSessionContextMode: 'keep' as const,
+        language,
         themeEffect: 'light' as const,
         customProviders: [
             {
@@ -48,9 +50,25 @@ describe('SettingsPanel tabbed layout', () => {
         );
 
         expect(html).toContain('settings-primary-tab is-active');
+        expect(html).toContain('Language');
         expect(html).toContain('Theme Effect');
         expect(html).toContain('Light');
         expect(html).not.toContain('Main Window Concurrent Models');
+    });
+
+    it('renders general settings in chinese when language is zh', () => {
+        const html = renderToStaticMarkup(
+            <Provider store={createTestStore({
+                config: createPreloadedState('zh').config,
+            })}>
+                <SettingsPanel />
+            </Provider>
+        );
+
+        expect(html).toContain('通用');
+        expect(html).toContain('语言');
+        expect(html).toContain('主题效果');
+        expect(html).toContain('中文');
     });
 
     it('renders primary settings navigation with General, AI, and Notebook', () => {

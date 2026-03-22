@@ -1,5 +1,6 @@
 import React from 'react';
 import { Download, Upload } from 'lucide-react';
+import { AppLanguage, getAppText } from '../../i18n/text';
 
 export type NotebookSettingsSectionProps = {
     onExportAllNotes?: () => void;
@@ -7,6 +8,7 @@ export type NotebookSettingsSectionProps = {
     importInputRef?: React.Ref<HTMLInputElement>;
     onImportNotesChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
     hint?: string;
+    language?: AppLanguage;
 };
 
 const NotebookSettingsSection: React.FC<NotebookSettingsSectionProps> = ({
@@ -15,21 +17,25 @@ const NotebookSettingsSection: React.FC<NotebookSettingsSectionProps> = ({
     importInputRef,
     onImportNotesChange,
     hint = '',
-}) => (
-    <div className="settings-tab-panel" data-settings-primary-tab="notebook">
+    language = 'en',
+}) => {
+    const text = getAppText(language);
+
+    return (
+        <div className="settings-tab-panel" data-settings-primary-tab="notebook">
         <section className="settings-section">
-            <h3>Export</h3>
+            <h3>{text.notebookExport}</h3>
             <button className="note-settings-action" onClick={onExportAllNotes}>
                 <Download size={16} />
-                <span>Export All Notes to Directory</span>
+                <span>{text.exportAllNotesToDirectory}</span>
             </button>
         </section>
 
         <section className="settings-section">
-            <h3>Import</h3>
+            <h3>{text.notebookImport}</h3>
             <button className="note-settings-action" onClick={onImportNotesClick}>
                 <Upload size={16} />
-                <span>Import Notes from Export File</span>
+                <span>{text.importNotesFromFile}</span>
             </button>
             <input
                 ref={importInputRef}
@@ -43,7 +49,8 @@ const NotebookSettingsSection: React.FC<NotebookSettingsSectionProps> = ({
         {hint && (
             <div className="note-settings-hint">{hint}</div>
         )}
-    </div>
-);
+        </div>
+    );
+};
 
 export default NotebookSettingsSection;

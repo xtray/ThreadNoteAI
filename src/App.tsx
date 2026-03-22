@@ -17,6 +17,7 @@ import { guardCtrlWheelZoom } from './utils/wheelZoomGuard';
 import { exportAiConfig, importAiConfigPayload } from './utils/aiConfigTransfer';
 import { exportAiChats, mergeImportedChats, overwriteImportedChats } from './utils/aiChatsTransfer';
 import type { SettingsAiTabId, SettingsPrimaryTabId } from './components/Settings/SettingsPanel';
+import { getAppText } from './i18n/text';
 
 type WorkspaceMode = 'ai' | 'notebook';
 
@@ -48,6 +49,7 @@ function App() {
     const sessions = useSelector((state: RootState) => state.sessions.sessions);
     const activeSessionId = useSelector((state: RootState) => state.sessions.activeSessionId);
     const config = useSelector((state: RootState) => state.config);
+    const text = getAppText(config.language);
     const mainModelId = useSelector((state: RootState) => state.config.mainModelId);
     const notes = useSelector((state: RootState) => state.notes.notes);
     const activeNoteId = useSelector((state: RootState) => state.notes.activeNoteId);
@@ -338,7 +340,7 @@ function App() {
     const handleExportAllNotes = async () => {
         const notesArray = sortedNotes;
         if (notesArray.length === 0) {
-            setNotebookSettingsHint('No notes to export.');
+            setNotebookSettingsHint(text.noNotesToExport);
             return;
         }
 
@@ -359,7 +361,7 @@ function App() {
             a.download = fileName;
             a.click();
             URL.revokeObjectURL(url);
-            setNotebookSettingsHint('Directory picker not available. Exported as a JSON file instead.');
+            setNotebookSettingsHint(text.directoryPickerUnavailable);
             return;
         }
 
@@ -389,10 +391,10 @@ function App() {
             }
 
             await writeTextFile('threadnote-notes-export.json', JSON.stringify(payload, null, 2));
-            setNotebookSettingsHint(`Exported ${notesArray.length} notes.`);
+            setNotebookSettingsHint(text.exportedNotes(notesArray.length));
         } catch (error) {
             console.error('Failed to export notes:', error);
-            setNotebookSettingsHint('Export canceled or failed.');
+            setNotebookSettingsHint(text.exportCanceledOrFailed);
         }
     };
 
@@ -414,7 +416,7 @@ function App() {
             const imported = (arr as any[])
                 .filter((n) => n && typeof n === 'object' && typeof n.content === 'string')
                 .map((n, idx) => {
-                    const title = typeof n.title === 'string' && n.title.trim() ? n.title.trim() : `Imported Note ${idx + 1}`;
+                    const title = typeof n.title === 'string' && n.title.trim() ? n.title.trim() : text.importedNoteTitle(idx);
                     const id = typeof n.id === 'string' && n.id.trim() ? n.id : `imported-note-${Date.now()}-${idx}`;
                     const fileName = typeof n.fileName === 'string' && n.fileName.trim()
                         ? n.fileName
@@ -430,7 +432,7 @@ function App() {
                 });
 
             if (imported.length === 0) {
-                setNotebookSettingsHint('No valid notes found in this file.');
+                setNotebookSettingsHint(text.noValidNotesFound);
                 return;
             }
 
@@ -441,10 +443,10 @@ function App() {
 
             dispatch(loadNotes(map));
             dispatch(setActiveNoteId(imported[0].id));
-            setNotebookSettingsHint(`Imported ${imported.length} notes.`);
+            setNotebookSettingsHint(text.importedNotes(imported.length));
         } catch (error) {
             console.error('Failed to import notes:', error);
-            setNotebookSettingsHint('Import failed. Please choose a valid export JSON file.');
+            setNotebookSettingsHint(text.importFailed);
         }
     };
 
@@ -530,21 +532,24 @@ function App() {
     return (
         <div className="app-container">
             <aside ref={sidebarRef} className="sidebar" style={{ width: `${sidebarWidth}px` }}>
-                <SidebarTitleBar onOpenSettings={() => openUnifiedSettings('general')} />
+                <SidebarTitleBar
+                    onOpenSettings={() => openUnifiedSettings('general')}
+                    language={config.language}
+                />
                 <div className="left-mode-tabs">
                     <button
                         className={`left-mode-tab ${workspaceMode === 'ai' ? 'active' : ''}`}
                         onClick={() => setWorkspaceMode('ai')}
                     >
                         <MessageSquare size={14} />
-                        <span>AI</span>
+                        <span>{text.ai}</span>
                     </button>
                     <button
                         className={`left-mode-tab ${workspaceMode === 'notebook' ? 'active' : ''}`}
                         onClick={() => setWorkspaceMode('notebook')}
                     >
                         <BookOpenText size={14} />
-                        <span>Notebook</span>
+                        <span>{text.notebook}</span>
                     </button>
                 </div>
 
@@ -552,18 +557,18 @@ function App() {
                     <>
                         <button className="new-chat-btn" onClick={handleNewChat}>
                             <Plus size={16} />
-                            <span>New Chat</span>
+                            <span>{text.newChat}</span>
                         </button>
                         <input
                             className="sidebar-search-input"
                             type="search"
-                            placeholder="Search chats"
+                            placeholder={text.searchChats}
                             value={chatSearch}
                             onChange={(e) => setChatSearch(e.target.value)}
                         />
                         <div className="history-list">
                             {visibleChatResults.length === 0 ? (
-                                <div className="sidebar-empty-state">No chats match this search.</div>
+                                <div className="sidebar-empty-state">{text.noChatsMatchSearch}</div>
                             ) : (
                                 visibleChatResults.map(({ sessionId, result }) => (
                                     <button
@@ -591,11 +596,11 @@ function App() {
                         <div className="sidebar-spacer" />
                         <button className="clear-history-btn" onClick={() => setClearModalOpen(true)}>
                             <Trash2 size={16} />
-                            <span>Clear All Chats</span>
+                            <span>{text.clearAllChats}</span>
                         </button>
                         <button className="settings-btn" onClick={() => openUnifiedSettings('ai', 'models')}>
                             <Settings size={18} />
-                            <span>Settings</span>
+                            <span>{text.openSettings}</span>
                         </button>
                     </>
                 ) : (
@@ -603,18 +608,18 @@ function App() {
                         <input
                             className="sidebar-search-input"
                             type="search"
-                            placeholder="Search notes"
+                            placeholder={text.searchNotes}
                             value={noteSearch}
                             onChange={(e) => setNoteSearch(e.target.value)}
                         />
                         <div className="history-list note-history-list">
                             {sortedNotes.length === 0 ? (
                                 <div className="notes-empty">
-                                    <p>No notes yet.</p>
-                                    <p>Right click AI response text and choose Add to note.</p>
+                                    <p>{text.noNotesYet}</p>
+                                    <p>{text.addToNoteHint}</p>
                                 </div>
                             ) : visibleNoteResults.length === 0 ? (
-                                <div className="sidebar-empty-state">No notes match this search.</div>
+                                <div className="sidebar-empty-state">{text.noNotesMatchSearch}</div>
                             ) : (
                                 visibleNoteResults.map(({ noteId, result }) => (
                                     <button
@@ -638,11 +643,11 @@ function App() {
                         <div className="sidebar-spacer" />
                         <button className="clear-history-btn" onClick={() => setClearNotesModalOpen(true)}>
                             <Trash2 size={16} />
-                            <span>Clear All Notes</span>
+                            <span>{text.clearAllNotes}</span>
                         </button>
                         <button className="settings-btn" onClick={() => openUnifiedSettings('notebook')}>
                             <Settings size={18} />
-                            <span>Settings</span>
+                            <span>{text.openSettings}</span>
                         </button>
                     </>
                 )}
@@ -652,7 +657,7 @@ function App() {
                 onPointerDown={handleSidebarResizeStart}
                 role="separator"
                 aria-orientation="vertical"
-                aria-label="Resize sidebar"
+                aria-label={text.resizeSidebar}
             />
             <main className="chat-main">
                 <section ref={workspaceMainRef} className="workspace-main">
@@ -716,7 +721,7 @@ function App() {
                             setHistoryMenu(null);
                         }}
                     >
-                        Delete Chat
+                        {text.deleteChat}
                     </button>
                 </div>
             )}
@@ -734,7 +739,7 @@ function App() {
                             setNoteMenu(null);
                         }}
                     >
-                        Delete
+                        {text.deleteNote}
                     </button>
                     <button
                         type="button"
@@ -743,7 +748,7 @@ function App() {
                             setNoteMenu(null);
                         }}
                     >
-                        Export Markdown
+                        {text.exportMarkdown}
                     </button>
                 </div>
             )}
@@ -751,14 +756,14 @@ function App() {
             {clearModalOpen && (
                 <div className="confirm-modal-backdrop" onClick={() => setClearModalOpen(false)}>
                     <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-                        <h3>Clear all chats?</h3>
-                        <p>This will permanently remove all chats, sub-sessions, and annotations from local storage.</p>
+                        <h3>{text.clearAllChatsConfirmTitle}</h3>
+                        <p>{text.clearAllChatsConfirmBody}</p>
                         <div className="confirm-modal-actions">
                             <button className="confirm-cancel-btn" onClick={() => setClearModalOpen(false)}>
-                                Cancel
+                                {text.cancel}
                             </button>
                             <button className="confirm-danger-btn" onClick={handleClearHistory} disabled={isClearingChats}>
-                                {isClearingChats ? 'Clearing...' : 'Clear All'}
+                                {isClearingChats ? text.clearing : text.clearAll}
                             </button>
                         </div>
                     </div>
@@ -768,11 +773,11 @@ function App() {
             {deleteNoteId && (
                 <div className="confirm-modal-backdrop" onClick={() => setDeleteNoteId(null)}>
                     <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-                        <h3>Delete this note?</h3>
-                        <p>This action cannot be undone.</p>
+                        <h3>{text.deleteNoteConfirmTitle}</h3>
+                        <p>{text.deleteNoteConfirmBody}</p>
                         <div className="confirm-modal-actions">
                             <button className="confirm-cancel-btn" onClick={() => setDeleteNoteId(null)}>
-                                Cancel
+                                {text.cancel}
                             </button>
                             <button
                                 className="confirm-danger-btn"
@@ -781,7 +786,7 @@ function App() {
                                     setDeleteNoteId(null);
                                 }}
                             >
-                                Delete
+                                {text.delete}
                             </button>
                         </div>
                     </div>
@@ -791,14 +796,14 @@ function App() {
             {clearNotesModalOpen && (
                 <div className="confirm-modal-backdrop" onClick={() => setClearNotesModalOpen(false)}>
                     <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-                        <h3>Clear all notes?</h3>
-                        <p>This will permanently remove all notebook items from local storage.</p>
+                        <h3>{text.clearAllNotesConfirmTitle}</h3>
+                        <p>{text.clearAllNotesConfirmBody}</p>
                         <div className="confirm-modal-actions">
                             <button className="confirm-cancel-btn" onClick={() => setClearNotesModalOpen(false)}>
-                                Cancel
+                                {text.cancel}
                             </button>
                             <button className="confirm-danger-btn" onClick={handleClearAllNotes} disabled={isClearingNotes}>
-                                {isClearingNotes ? 'Clearing...' : 'Clear All'}
+                                {isClearingNotes ? text.clearing : text.clearAll}
                             </button>
                         </div>
                     </div>

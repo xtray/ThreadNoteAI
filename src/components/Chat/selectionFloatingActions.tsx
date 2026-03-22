@@ -1,5 +1,6 @@
 import React from 'react';
 import { Check, Copy, MessageCircle } from 'lucide-react';
+import { AppLanguage, getAppText } from '../../i18n/text';
 
 export type SelectionFloatingAction = {
     id: 'create-sub-session' | 'copy-selection';
@@ -16,6 +17,7 @@ type CreateSelectionFloatingActionsParams = {
     onCopySelection: (event: React.MouseEvent<HTMLButtonElement>) => void;
     copiedSelection?: boolean;
     includeCreateSubSession?: boolean;
+    language?: AppLanguage;
 };
 
 type SelectionFloatingActionBarProps = {
@@ -27,13 +29,15 @@ export const createSelectionFloatingActions = ({
     onCopySelection,
     copiedSelection = false,
     includeCreateSubSession = true,
+    language = 'en',
 }: CreateSelectionFloatingActionsParams): SelectionFloatingAction[] => {
+    const text = getAppText(language);
     const actions: SelectionFloatingAction[] = [
         {
             id: 'copy-selection',
-            title: copiedSelection ? 'Copied' : 'Copy selected text',
-            ariaLabel: copiedSelection ? 'Copied' : 'Copy selected text',
-            label: copiedSelection ? 'Copied' : undefined,
+            title: copiedSelection ? text.copied : text.copySelectedText,
+            ariaLabel: copiedSelection ? text.copied : text.copySelectedText,
+            label: copiedSelection ? text.copied : undefined,
             isActive: copiedSelection,
             icon: copiedSelection ? <Check size={16} /> : <Copy size={16} />,
             onClick: onCopySelection,
@@ -43,8 +47,8 @@ export const createSelectionFloatingActions = ({
     if (includeCreateSubSession && onCreateSubSession) {
         actions.push({
             id: 'create-sub-session',
-            title: 'Create sub-session dialog',
-            ariaLabel: 'Create sub-session dialog',
+            title: text.createSubSessionDialog,
+            ariaLabel: text.createSubSessionDialog,
             icon: <MessageCircle size={16} />,
             onClick: onCreateSubSession,
         });
@@ -56,14 +60,16 @@ export const createSelectionFloatingActions = ({
 export const createCopyOnlySelectionFloatingActions = ({
     onCopySelection,
     copiedSelection = false,
-}: Pick<CreateSelectionFloatingActionsParams, 'onCopySelection' | 'copiedSelection'>): SelectionFloatingAction[] => createSelectionFloatingActions({
+    language,
+}: Pick<CreateSelectionFloatingActionsParams, 'onCopySelection' | 'copiedSelection' | 'language'>): SelectionFloatingAction[] => createSelectionFloatingActions({
     onCopySelection,
     copiedSelection,
     includeCreateSubSession: false,
+    language,
 });
 
-export const SelectionFloatingActionBar: React.FC<SelectionFloatingActionBarProps> = ({ actions }) => (
-    <div className="selection-floating-actions" aria-label="Selection actions">
+export const SelectionFloatingActionBar: React.FC<SelectionFloatingActionBarProps & { language?: AppLanguage }> = ({ actions, language = 'en' }) => (
+    <div className="selection-floating-actions" aria-label={getAppText(language).selectionActionsLabel}>
         {actions.map((action) => (
             <button
                 key={action.id}

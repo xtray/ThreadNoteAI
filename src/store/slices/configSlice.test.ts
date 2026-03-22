@@ -160,6 +160,34 @@ describe('configSlice multi-model settings', () => {
         expect(persisted.settingsOpen).toBeUndefined();
     });
 
+    it('defaults language to english and persists valid language updates', async () => {
+        const { reducer, storage } = await loadConfigSlice();
+
+        const start = reducer(undefined, { type: '@@INIT' });
+        expect(start.language).toBe('en');
+
+        const next = reducer(start, {
+            type: 'config/setLanguage',
+            payload: 'zh',
+        });
+
+        expect(next.language).toBe('zh');
+
+        const persisted = JSON.parse(storage[STORAGE_KEY]);
+        expect(persisted.language).toBe('zh');
+        expect(persisted.settingsOpen).toBeUndefined();
+    });
+
+    it('sanitizes invalid saved language values on load', async () => {
+        const { reducer } = await loadConfigSlice({
+            language: 'jp',
+        });
+
+        const state = reducer(undefined, { type: '@@INIT' });
+
+        expect(state.language).toBe('en');
+    });
+
     it('sanitizes invalid saved themeEffect values on load', async () => {
         const { reducer } = await loadConfigSlice({
             themeEffect: 'neon',
@@ -184,6 +212,7 @@ describe('configSlice multi-model settings', () => {
                 subModelId: 'gpt-4o',
                 subSessionContextMode: 'keep',
                 customProviders: [],
+                language: 'zh',
                 themeEffect: 'dark',
                 settingsOpen: true,
             },
@@ -194,6 +223,7 @@ describe('configSlice multi-model settings', () => {
         expect(next.defaultMainModelIds).toEqual(['deepseek-chat']);
         expect(next.subSessionContextMode).toBe('keep');
         expect(next.settingsOpen).toBe(false);
+        expect(next.language).toBe('zh');
         expect(next.themeEffect).toBe('light');
     });
 });

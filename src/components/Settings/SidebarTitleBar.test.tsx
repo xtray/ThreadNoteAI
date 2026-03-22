@@ -12,4 +12,12 @@ describe('SidebarTitleBar', () => {
         expect(html).toContain('Open global settings');
         expect(html).toContain('sidebar-title-actions');
     });
+
+    it('renders translated settings trigger text in chinese', () => {
+        const html = renderToStaticMarkup(
+            <SidebarTitleBar onOpenSettings={vi.fn()} language="zh" />
+        );
+
+        expect(html).toContain('打开全局设置');
+    });
 });

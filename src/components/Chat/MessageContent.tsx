@@ -7,6 +7,7 @@ import { copyTextToClipboard } from './turnUtils';
 import { normalizeSearchQuery } from '../../utils/sidebarSearch';
 import { highlightReactNode, renderWithSearchHighlight } from '../../utils/searchHighlight';
 import { findAnnotationMatch } from './annotationMatch';
+import { AppLanguage, getAppText } from '../../i18n/text';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
@@ -31,6 +32,7 @@ interface MessageContentProps {
     onResponseContextMenu?: (e: React.MouseEvent<HTMLElement>, excerpt: string) => void;
     enableCodeBlockCopy?: boolean;
     searchQuery?: string;
+    language?: AppLanguage;
 }
 
 /**
@@ -47,7 +49,9 @@ const MessageContent: React.FC<MessageContentProps> = ({
     onResponseContextMenu,
     enableCodeBlockCopy = false,
     searchQuery = '',
+    language = 'en',
 }) => {
+    const text = getAppText(language);
     const [thinkExpanded, setThinkExpanded] = useState(false);
     const [copiedCodeBlockId, setCopiedCodeBlockId] = useState<string | null>(null);
     const [contextMenu, setContextMenu] = useState<{
@@ -173,7 +177,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
         span.setAttribute('data-generated', 'true');
         span.setAttribute('data-annotation-id', annotation.id);
         span.setAttribute('data-sub-session-id', annotation.subSessionId);
-        span.setAttribute('title', 'Open sub-session');
+        span.setAttribute('title', text.openSubSession);
 
         try {
             range.surroundContents(span);
@@ -267,7 +271,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
                     <button
                         type="button"
                         className="code-block-copy-btn"
-                        title="Copy code block"
+                        title={text.copyCodeBlockTitle}
                         onPointerDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -286,7 +290,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
                         }}
                     >
                         {copied ? <Check size={13} /> : <Copy size={13} />}
-                        <span>{copied ? 'Copied' : 'Copy'}</span>
+                        <span>{copied ? text.copied : text.copy}</span>
                     </button>
                 </div>
             );
@@ -348,7 +352,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
                         }}
                     >
                         <Brain size={14} />
-                        <span>Reasoning</span>
+                        <span>{text.reasoning}</span>
                         {thinkExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
                     {thinkExpanded && (
@@ -395,7 +399,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
                             });
                         }}
                     >
-                        Delete Sub-session
+                        {text.deleteSubSession}
                     </button>
                 </div>
             )}
@@ -405,15 +409,15 @@ const MessageContent: React.FC<MessageContentProps> = ({
                     onClick={() => setDeleteConfirm(null)}
                 >
                     <div className="confirm-modal annotation-delete-modal" onClick={(e) => e.stopPropagation()}>
-                        <h3>Delete sub-session?</h3>
-                        <p>This will remove this sub-session and all nested sub-sessions.</p>
+                        <h3>{text.deleteSubSessionConfirmTitle}</h3>
+                        <p>{text.deleteSubSessionConfirmBody}</p>
                         <div className="confirm-modal-actions">
                             <button
                                 className="confirm-cancel-btn"
                                 type="button"
                                 onClick={() => setDeleteConfirm(null)}
                             >
-                                Cancel
+                                {text.cancel}
                             </button>
                             <button
                                 className="confirm-danger-btn"
@@ -423,7 +427,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
                                     setDeleteConfirm(null);
                                 }}
                             >
-                                Delete
+                                {text.delete}
                             </button>
                         </div>
                     </div>

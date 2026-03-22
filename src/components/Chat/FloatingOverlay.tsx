@@ -25,6 +25,7 @@ import {
 import { shouldPreserveSelectableReplyMouseDown } from './floatingOverlayInteraction';
 import { clearBrowserSelection } from './browserSelection';
 import { getTrimmedRangeText } from './rangeText';
+import { getAppText } from '../../i18n/text';
 
 interface FloatingOverlayProps {
     sessionId: string;
@@ -41,6 +42,8 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const dispatch = useDispatch();
     const session = useSelector((state: RootState) => state.sessions.sessions[sessionId]);
     const customProviders = useSelector((state: RootState) => state.config.customProviders);
+    const language = useSelector((state: RootState) => state.config.language);
+    const text = getAppText(language);
     const modelOptions = getModelOptions(customProviders);
     const notes = useSelector((state: RootState) => state.notes.notes);
     const [inputText, setInputText] = useState('');
@@ -477,7 +480,8 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
     const selectionFloatingActions = useMemo(() => createCopyOnlySelectionFloatingActions({
         onCopySelection: handleCopySelection,
         copiedSelection,
-    }), [copiedSelection, handleCopySelection]);
+        language,
+    }), [copiedSelection, handleCopySelection, language]);
 
     if (!session) return null;
 
@@ -537,11 +541,11 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                     <button
                         className="overlay-action-btn"
                         onClick={() => setIsFullscreen(!isFullscreen)}
-                        title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                        title={isFullscreen ? text.exitFullscreen : text.enterFullscreen}
                     >
                         {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                     </button>
-                    <button className="overlay-action-btn" onClick={onClose} title="Close">
+                    <button className="overlay-action-btn" onClick={onClose} title={text.close}>
                         <X size={16} />
                     </button>
                 </div>
@@ -557,7 +561,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                     disabled={session.isLoading}
                     title={getModelDisplayName(session.modelId, customProviders)}
                 >
-                    <optgroup label="Built-in">
+                    <optgroup label={text.builtIn}>
                         {modelOptions.builtIn.map((m) => (
                             <option key={m.id} value={m.id}>
                                 {m.displayName}
@@ -565,7 +569,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                         ))}
                     </optgroup>
                     {modelOptions.custom.length > 0 && (
-                        <optgroup label="Custom">
+                        <optgroup label={text.custom}>
                             {modelOptions.custom.map((m) => (
                                 <option key={m.id} value={m.id}>
                                     {m.displayName}
@@ -580,17 +584,17 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                             className={session.contextMode === 'keep' ? 'mode-btn active' : 'mode-btn'}
                             onClick={() => dispatch(updateSessionContextMode({ sessionId: session.id, contextMode: 'keep' }))}
                             disabled={session.isLoading}
-                            title="Use main chat snapshot + sub-session history"
+                            title={text.keepContextTooltip}
                         >
-                            Keep
+                            {text.keepMode}
                         </button>
                         <button
                             className={session.contextMode === 'keep' ? 'mode-btn' : 'mode-btn active'}
                             onClick={() => dispatch(updateSessionContextMode({ sessionId: session.id, contextMode: 'new' }))}
                             disabled={session.isLoading}
-                            title="Use only sub-session history"
+                            title={text.newContextTooltip}
                         >
-                            New
+                            {text.newMode}
                         </button>
                     </div>
                 )}
@@ -621,6 +625,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                     content={m.content}
                                     annotations={m.annotations}
                                     enableCodeBlockCopy={m.role === 'assistant'}
+                                    language={language}
                                 />
                                 {m.role === 'assistant' && turnMarkdown && (
                                     <TurnToolbar
@@ -628,10 +633,10 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                         actions={[
                                             {
                                                 id: `copy-turn-${m.id}`,
-                                                label: copiedMessageId === m.id ? 'Copied' : 'Copy',
+                                                label: copiedMessageId === m.id ? text.copied : text.copy,
                                                 icon: copiedMessageId === m.id ? <Check size={13} /> : <Copy size={13} />,
                                                 onClick: () => handleCopyAssistantTurnMarkdown(m.id, turnMarkdown),
-                                                title: 'Copy question + answer as Markdown',
+                                                title: text.copyTurnMarkdownTitle,
                                             },
                                         ]}
                                     />
@@ -642,7 +647,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                 ))}
                 {session.isLoading && (
                     <div className="overlay-message assistant">
-                        <span className="loading-indicator">Thinking...</span>
+                        <span className="loading-indicator">{text.thinking}</span>
                     </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -682,7 +687,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                         e.stopPropagation();
                     }}
                 >
-                    <SelectionFloatingActionBar actions={selectionFloatingActions} />
+                    <SelectionFloatingActionBar actions={selectionFloatingActions} language={language} />
                 </div>
             )}
 
@@ -703,7 +708,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                             handleSend();
                         }
                     }}
-                    placeholder="Ask about this..."
+                    placeholder={text.subThreadPlaceholder}
                     disabled={session.isLoading}
                     rows={1}
                 />
@@ -711,12 +716,12 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                     className={`overlay-send-btn ${session.isLoading ? 'is-stop' : ''}`}
                     onClick={session.isLoading ? handleStop : handleSend}
                     disabled={!session.isLoading && !inputText.trim()}
-                    title={session.isLoading ? 'Stop generating' : 'Send'}
+                    title={session.isLoading ? text.stop : text.send}
                 >
                     {session.isLoading ? (
                         <>
                             <Square size={13} />
-                            <span>Stop</span>
+                            <span>{text.stop}</span>
                         </>
                     ) : (
                         <Send size={14} />
@@ -743,7 +748,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                     addToSessionNote(contextMenu.selectedText);
                                 }}
                             >
-                                Add to note
+                                {text.addToNote}
                             </button>
                             {contextMenu.turnUserMessageId && (
                                 <button
@@ -758,7 +763,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                         setContextMenu(null);
                                     }}
                                 >
-                                    Delete turn
+                                    {text.deleteTurn}
                                 </button>
                             )}
                         </>
@@ -774,7 +779,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                 setContextMenu(null);
                             }}
                         >
-                            Delete turn
+                            {text.deleteTurn}
                         </button>
                     )}
                 </div>,
@@ -786,15 +791,15 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                     onClick={() => setDeleteConfirm(null)}
                 >
                     <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-                        <h3>Delete turn?</h3>
-                        <p>This will remove the selected question and its reply.</p>
+                        <h3>{text.deleteTurnConfirmTitle}</h3>
+                        <p>{text.deleteTurnConfirmBody}</p>
                         <div className="confirm-modal-actions">
                             <button
                                 className="confirm-cancel-btn"
                                 type="button"
                                 onClick={() => setDeleteConfirm(null)}
                             >
-                                Cancel
+                                {text.cancel}
                             </button>
                             <button
                                 className="confirm-danger-btn"
@@ -804,7 +809,7 @@ const FloatingOverlay: React.FC<FloatingOverlayProps> = ({ sessionId, onClose })
                                     setDeleteConfirm(null);
                                 }}
                             >
-                                Delete
+                                {text.delete}
                             </button>
                         </div>
                     </div>

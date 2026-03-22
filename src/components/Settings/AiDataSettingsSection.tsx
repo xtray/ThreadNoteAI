@@ -1,4 +1,5 @@
 import React from 'react';
+import { AppLanguage, getAppText } from '../../i18n/text';
 
 export type AiDataSettingsSectionProps = {
     onExportAiConfig?: () => void;
@@ -6,6 +7,7 @@ export type AiDataSettingsSectionProps = {
     onExportAiChats?: () => void;
     onOverwriteAiChats?: () => void;
     onMergeAiChats?: () => void;
+    language?: AppLanguage;
 };
 
 const AiDataSettingsSection: React.FC<AiDataSettingsSectionProps> = ({
@@ -14,41 +16,46 @@ const AiDataSettingsSection: React.FC<AiDataSettingsSectionProps> = ({
     onExportAiChats,
     onOverwriteAiChats,
     onMergeAiChats,
-}) => (
-    <div className="settings-tab-panel" data-settings-tab="data">
+    language = 'en',
+}) => {
+    const text = getAppText(language);
+
+    return (
+        <div className="settings-tab-panel" data-settings-tab="data">
         <section className="settings-section">
             <div className="settings-info-card">
-                <strong>Models &amp; Providers Configuration</strong>
-                <p>Back up and restore all Models and Providers settings, including model slots, provider API keys, and custom provider model lists, as one JSON file.</p>
+                <strong>{text.modelProviderConfigTitle}</strong>
+                <p>{text.modelProviderConfigHint}</p>
             </div>
             <div className="settings-action-group">
                 <button className="note-settings-action" onClick={onExportAiConfig}>
-                    <span>Export Models &amp; Providers Configuration</span>
+                    <span>{text.exportModelProviderConfig}</span>
                 </button>
                 <button className="note-settings-action" onClick={onImportAiConfig}>
-                    <span>Import Models &amp; Providers Configuration</span>
+                    <span>{text.importModelProviderConfig}</span>
                 </button>
             </div>
         </section>
 
         <section className="settings-section">
             <div className="settings-info-card">
-                <strong>AI Chats</strong>
-                <p>Export all chat history or import a saved chat archive with overwrite or merge behavior.</p>
+                <strong>{text.aiChatsTitle}</strong>
+                <p>{text.aiChatsHint}</p>
             </div>
             <div className="settings-action-group">
                 <button className="note-settings-action" onClick={onExportAiChats}>
-                    <span>Export All AI Chats</span>
+                    <span>{text.exportAllAiChats}</span>
                 </button>
                 <button className="note-settings-action" onClick={onOverwriteAiChats}>
-                    <span>Overwrite current chats</span>
+                    <span>{text.overwriteCurrentChats}</span>
                 </button>
                 <button className="note-settings-action" onClick={onMergeAiChats}>
-                    <span>Merge into current chats</span>
+                    <span>{text.mergeIntoCurrentChats}</span>
                 </button>
             </div>
         </section>
-    </div>
-);
+        </div>
+    );
+};
 
 export default AiDataSettingsSection;
