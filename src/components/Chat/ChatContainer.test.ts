@@ -1,10 +1,71 @@
 import { describe, expect, it } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
 import {
     orderModelOptionsBySelection,
     projectRootSessionMessagesByRoundTabs,
     resolveRoundTabModelId,
     shouldAutoScrollMessageList,
 } from './ChatContainer';
+import ChatContainer from './ChatContainer';
+import sessionReducer from '../../store/slices/sessionSlice';
+import configReducer from '../../store/slices/configSlice';
+import notesReducer from '../../store/slices/notesSlice';
+
+const renderChatContainer = () => {
+    const store = configureStore({
+        reducer: {
+            sessions: sessionReducer,
+            config: configReducer,
+            notes: notesReducer,
+        },
+        preloadedState: {
+            sessions: {
+                activeSessionId: 'main',
+                sessions: {
+                    main: {
+                        id: 'main',
+                        parentId: null,
+                        anchorText: null,
+                        anchorMessageId: null,
+                        messages: [],
+                        modelId: 'MiniMax-M2.7',
+                        isLoading: false,
+                    },
+                },
+            },
+            config: {
+                apiKeys: {
+                    minimax: 'mini-key',
+                },
+                mainModelId: 'MiniMax-M2.7',
+                maxConcurrentMainModels: 2,
+                defaultMainModelIds: ['MiniMax-M2.7', 'deepseek-chat'],
+                subModelId: 'MiniMax-M2.7',
+                subSessionContextMode: 'new' as const,
+                customProviders: [
+                    {
+                        id: 'custom-provider-1',
+                        name: 'NVIDIA',
+                        baseUrl: 'https://integrate.api.nvidia.com/v1',
+                        apiKey: 'secret',
+                        models: ['meta/llama-3.1-70b-instruct'],
+                    },
+                ],
+                language: 'en' as const,
+                themeEffect: 'light' as const,
+                settingsOpen: false,
+            },
+        },
+    });
+
+    return renderToStaticMarkup(React.createElement(Provider, {
+        store,
+        children: React.createElement(ChatContainer),
+    }));
+};
 
 describe('orderModelOptionsBySelection', () => {
     it('puts selected models first and keeps remaining models in original order', () => {
@@ -166,5 +227,16 @@ describe('shouldAutoScrollMessageList', () => {
             },
             hasSearchQuery: false,
         })).toBe(true);
+    });
+});
+
+describe('ChatContainer model picker', () => {
+    it('shows only provisioned models at the top of the main chat box', () => {
+        const html = renderChatContainer();
+
+        expect(html).toContain('MiniMax M2.7');
+        expect(html).toContain('meta/llama-3.1-70b-instruct (NVIDIA)');
+        expect(html).not.toContain('ChatGPT 4o');
+        expect(html).not.toContain('DeepSeek Chat');
     });
 });

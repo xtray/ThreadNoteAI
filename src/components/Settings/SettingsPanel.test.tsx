@@ -8,6 +8,9 @@ import notesReducer from '../../store/slices/notesSlice';
 import SettingsPanel, { SettingsPanelContent } from './SettingsPanel';
 import type { AppLanguage } from '../../i18n/text';
 
+const countOccurrences = (source: string, search: string) =>
+    source.split(search).length - 1;
+
 const createPreloadedState = (language: AppLanguage = 'en') => ({
     config: {
         apiKeys: {},
@@ -102,7 +105,14 @@ describe('SettingsPanel tabbed layout', () => {
 
     it('renders models guidance copy in the Models tab content', () => {
         const html = renderToStaticMarkup(
-            <Provider store={createTestStore()}>
+            <Provider store={createTestStore({
+                config: {
+                    ...createPreloadedState().config,
+                    apiKeys: {
+                        minimax: 'mini-key',
+                    },
+                },
+            })}>
                 <SettingsPanelContent activePrimaryTab="ai" activeAiTab="models" />
             </Provider>
         );
@@ -111,6 +121,26 @@ describe('SettingsPanel tabbed layout', () => {
         expect(html).toContain('Recommended');
         expect(html).toContain('MiniMax M2.5');
         expect(html).toContain('MiniMax M2.7');
+    });
+
+    it('shows only provisioned models in the models tab selectors', () => {
+        const html = renderToStaticMarkup(
+            <Provider store={createTestStore({
+                config: {
+                    ...createPreloadedState().config,
+                    apiKeys: {
+                        minimax: 'mini-key',
+                    },
+                },
+            })}>
+                <SettingsPanelContent activePrimaryTab="ai" activeAiTab="models" />
+            </Provider>
+        );
+
+        expect(countOccurrences(html, '>MiniMax M2.7</option>')).toBe(3);
+        expect(countOccurrences(html, '>meta/llama-3.1-70b-instruct (NVIDIA)</option>')).toBe(3);
+        expect(countOccurrences(html, '>ChatGPT 4o</option>')).toBe(0);
+        expect(countOccurrences(html, '>DeepSeek Chat</option>')).toBe(0);
     });
 
     it('filters provider content when a provider query is supplied', () => {

@@ -15,7 +15,7 @@ import {
     updateSessionModel,
 } from '../../store/slices/sessionSlice';
 import { Send, Square } from 'lucide-react';
-import { getModelDisplayName, getModelOptions } from '../../utils/modelDisplay';
+import { getModelDisplayName, getProvisionedModelOptions } from '../../utils/modelDisplay';
 import { normalizeSearchQuery } from '../../utils/sidebarSearch';
 import { getAppText } from '../../i18n/text';
 
@@ -136,12 +136,13 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
         activeSessionId ? state.sessions.sessions[activeSessionId] : null
     );
     const mainModelId = useSelector((state: RootState) => state.config.mainModelId);
+    const apiKeys = useSelector((state: RootState) => state.config.apiKeys);
     const maxConcurrentMainModels = useSelector((state: RootState) => state.config.maxConcurrentMainModels);
     const defaultMainModelIds = useSelector((state: RootState) => state.config.defaultMainModelIds);
     const customProviders = useSelector((state: RootState) => state.config.customProviders);
     const language = useSelector((state: RootState) => state.config.language);
     const text = getAppText(language);
-    const modelOptions = getModelOptions(customProviders);
+    const modelOptions = getProvisionedModelOptions({ apiKeys, customProviders });
     const allModelOptions = useMemo(() => [...modelOptions.builtIn, ...modelOptions.custom], [modelOptions]);
     const maxSelectableMainModels = clampMainModelSlots(maxConcurrentMainModels);
     const isRootSession = session?.parentId === null;

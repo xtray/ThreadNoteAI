@@ -10,6 +10,28 @@ export const getModelOptions = (customProviders: CustomProviderConfig[]) => {
     };
 };
 
+export const getProvisionedModelOptions = ({
+    apiKeys,
+    customProviders,
+}: {
+    apiKeys: Record<string, string>;
+    customProviders: CustomProviderConfig[];
+}) => {
+    const builtIn = AVAILABLE_MODELS.filter((model) => (apiKeys[model.providerId] || '').trim().length > 0);
+    const provisionedCustomProviders = customProviders.filter((provider) =>
+        provider.baseUrl.trim().length > 0
+        && provider.apiKey.trim().length > 0
+        && provider.models.some((modelName) => modelName.trim().length > 0)
+    );
+    const custom = getCustomModelOptions(provisionedCustomProviders);
+
+    return {
+        builtIn,
+        custom,
+        all: [...builtIn, ...custom],
+    };
+};
+
 export const getModelDisplayName = (modelId: string, customProviders: CustomProviderConfig[]) => {
     const fixedModel = getModelById(modelId);
     if (fixedModel) return fixedModel.displayName;

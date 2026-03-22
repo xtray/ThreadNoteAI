@@ -20,6 +20,7 @@ import {
 } from '../../store/slices/configSlice';
 import { SUPPORTED_PROVIDERS, AVAILABLE_MODELS } from '../../utils/models';
 import { getCustomModelOptions } from '../../utils/customModels';
+import { getProvisionedModelOptions } from '../../utils/modelDisplay';
 import { getAppText } from '../../i18n/text';
 import { X, Eye, EyeOff, Plus, Trash2, GripVertical, ChevronRight, Search } from 'lucide-react';
 import NotebookSettingsSection from './NotebookSettingsSection';
@@ -57,6 +58,10 @@ export const SettingsPanelContent: React.FC<{
     const [draggingModel, setDraggingModel] = useState<{ providerId: string; index: number } | null>(null);
     const [dragOverModel, setDragOverModel] = useState<{ providerId: string; index: number } | null>(null);
     const customModels = getCustomModelOptions(config.customProviders);
+    const provisionedModelOptions = getProvisionedModelOptions({
+        apiKeys: config.apiKeys,
+        customProviders: config.customProviders,
+    });
     const normalizedProviderQuery = providerQuery.trim().toLowerCase();
     const filteredBuiltInProviders = normalizedProviderQuery
         ? SUPPORTED_PROVIDERS.filter((provider) => provider.name.toLowerCase().includes(normalizedProviderQuery))
@@ -235,7 +240,7 @@ export const SettingsPanelContent: React.FC<{
                                             }
                                         >
                                             <optgroup label={text.builtIn}>
-                                                {AVAILABLE_MODELS.map((m) => (
+                                                {provisionedModelOptions.builtIn.map((m) => (
                                                     <option
                                                         key={m.id}
                                                         value={m.id}
@@ -245,9 +250,9 @@ export const SettingsPanelContent: React.FC<{
                                                     </option>
                                                 ))}
                                             </optgroup>
-                                            {customModels.length > 0 && (
+                                            {provisionedModelOptions.custom.length > 0 && (
                                                 <optgroup label={text.custom}>
-                                                    {customModels.map((m) => (
+                                                    {provisionedModelOptions.custom.map((m) => (
                                                         <option
                                                             key={m.id}
                                                             value={m.id}
@@ -275,15 +280,15 @@ export const SettingsPanelContent: React.FC<{
                             onChange={(e) => dispatch(setSubModel(e.target.value))}
                         >
                             <optgroup label={text.builtIn}>
-                                {AVAILABLE_MODELS.map((m) => (
+                                {provisionedModelOptions.builtIn.map((m) => (
                                     <option key={m.id} value={m.id}>
                                         {m.displayName}
                                     </option>
                                 ))}
                             </optgroup>
-                            {customModels.length > 0 && (
+                            {provisionedModelOptions.custom.length > 0 && (
                                 <optgroup label={text.custom}>
-                                    {customModels.map((m) => (
+                                    {provisionedModelOptions.custom.map((m) => (
                                         <option key={m.id} value={m.id}>
                                             {m.displayName}
                                         </option>

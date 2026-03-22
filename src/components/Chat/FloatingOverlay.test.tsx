@@ -5,7 +5,7 @@ import { Provider } from 'react-redux';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import sessionReducer, { ChatSession, Message, SessionState } from '../../store/slices/sessionSlice';
-import configReducer from '../../store/slices/configSlice';
+import configReducer, { ConfigState } from '../../store/slices/configSlice';
 import notesReducer from '../../store/slices/notesSlice';
 import FloatingOverlay from './FloatingOverlay';
 
@@ -25,7 +25,21 @@ const buildSessionState = (messages: Message[]): SessionState => ({
     },
 });
 
-const renderOverlay = (messages: Message[]) => {
+const buildConfigState = (overrides: Partial<ConfigState> = {}): ConfigState => ({
+    apiKeys: {},
+    mainModelId: 'MiniMax-M2.7',
+    maxConcurrentMainModels: 1,
+    defaultMainModelIds: ['MiniMax-M2.7'],
+    subModelId: 'MiniMax-M2.7',
+    subSessionContextMode: 'new',
+    customProviders: [],
+    language: 'en',
+    themeEffect: 'light',
+    settingsOpen: false,
+    ...overrides,
+});
+
+const renderOverlay = (messages: Message[], configOverrides: Partial<ConfigState> = {}) => {
     const store = configureStore({
         reducer: {
             sessions: sessionReducer,
@@ -34,6 +48,7 @@ const renderOverlay = (messages: Message[]) => {
         },
         preloadedState: {
             sessions: buildSessionState(messages),
+            config: buildConfigState(configOverrides),
         },
     });
 
@@ -88,5 +103,33 @@ describe('FloatingOverlay code block copy button', () => {
         expect(source).toContain('setDeleteConfirm({');
         expect(source).toContain('dispatch(removeTurn(deleteConfirm))');
         expect(source).toContain('text.deleteTurnConfirmTitle');
+    });
+
+    it('shows only provisioned models in the sub-thread selector', () => {
+        const html = renderOverlay(
+            [
+                { id: 'u1', role: 'user', content: 'show code', timestamp: 1 },
+                { id: 'a1', role: 'assistant', content: 'answer', timestamp: 2, modelId: 'deepseek-chat' },
+            ],
+            {
+                apiKeys: {
+                    deepseek: 'deep-key',
+                },
+                customProviders: [
+                    {
+                        id: 'custom-provider-1',
+                        name: 'NVIDIA',
+                        baseUrl: 'https://integrate.api.nvidia.com/v1',
+                        apiKey: 'secret',
+                        models: ['meta/llama-3.1-70b-instruct'],
+                    },
+                ],
+            }
+        );
+
+        expect(html).toContain('DeepSeek Chat');
+        expect(html).toContain('meta/llama-3.1-70b-instruct (NVIDIA)');
+        expect(html).not.toContain('ChatGPT 4o');
+        expect(html).not.toContain('Claude 3.5 Sonnet');
     });
 });
