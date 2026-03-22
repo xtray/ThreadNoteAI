@@ -4,9 +4,9 @@ import { exportAiConfig, importAiConfigPayload } from './aiConfigTransfer';
 
 const buildConfig = (): ConfigState => ({
     apiKeys: { openai: 'secret' },
-    mainModelId: 'MiniMax-M2.5',
+    mainModelId: 'MiniMax-M2.7',
     maxConcurrentMainModels: 2,
-    defaultMainModelIds: ['MiniMax-M2.5', 'deepseek-chat'],
+    defaultMainModelIds: ['MiniMax-M2.7', 'deepseek-chat'],
     subModelId: 'gpt-4o',
     subSessionContextMode: 'keep',
     customProviders: [
@@ -32,9 +32,9 @@ describe('aiConfigTransfer', () => {
             exportedAt: payload.exportedAt,
             config: {
                 models: {
-                    mainModelId: 'MiniMax-M2.5',
+                    mainModelId: 'MiniMax-M2.7',
                     maxConcurrentMainModels: 2,
-                    defaultMainModelIds: ['MiniMax-M2.5', 'deepseek-chat'],
+                    defaultMainModelIds: ['MiniMax-M2.7', 'deepseek-chat'],
                     subModelId: 'gpt-4o',
                 },
                 providers: {
@@ -55,7 +55,7 @@ describe('aiConfigTransfer', () => {
             },
         });
         expect(payload.exportedAt).toMatch(/T/);
-        expect(payload.config.models.defaultMainModelIds).toEqual(['MiniMax-M2.5', 'deepseek-chat']);
+        expect(payload.config.models.defaultMainModelIds).toEqual(['MiniMax-M2.7', 'deepseek-chat']);
         expect(payload.config.models.subModelId).toBe('gpt-4o');
         expect(payload.config.providers.apiKeys).toEqual({ openai: 'secret' });
         expect(payload.config.providers.customProviders[0]).toMatchObject({
@@ -101,7 +101,7 @@ describe('aiConfigTransfer', () => {
         expect(imported.maxConcurrentMainModels).toBe(3);
         expect(imported.defaultMainModelIds.length).toBe(3);
         expect(imported.defaultMainModelIds).not.toContain('missing-model');
-        expect(imported.subModelId).toBe('MiniMax-M2.5');
+        expect(imported.subModelId).toBe('MiniMax-M2.7');
         expect(imported.subSessionContextMode).toBe('keep');
         expect(imported.customProviders).toEqual([
             {
@@ -122,9 +122,9 @@ describe('aiConfigTransfer', () => {
             version: 1,
             config: {
                 apiKeys: { anthropic: 'legacy-key' },
-                mainModelId: 'MiniMax-M2.5',
+                mainModelId: 'MiniMax-M2.7',
                 maxConcurrentMainModels: 1,
-                defaultMainModelIds: ['MiniMax-M2.5'],
+                defaultMainModelIds: ['MiniMax-M2.7'],
                 subModelId: 'gpt-4o',
                 subSessionContextMode: 'new',
                 customProviders: [],
@@ -132,7 +132,7 @@ describe('aiConfigTransfer', () => {
         }, buildConfig());
 
         expect(imported.apiKeys).toEqual({});
-        expect(imported.defaultMainModelIds[0]).toBe('MiniMax-M2.5');
+        expect(imported.defaultMainModelIds[0]).toBe('MiniMax-M2.7');
         expect(imported.defaultMainModelIds.length).toBe(3);
         expect(imported.subSessionContextMode).toBe('new');
     });

@@ -10,9 +10,9 @@ import SettingsPanel, { SettingsPanelContent } from './SettingsPanel';
 const createPreloadedState = () => ({
     config: {
         apiKeys: {},
-        mainModelId: 'MiniMax-M2.5',
+        mainModelId: 'MiniMax-M2.7',
         maxConcurrentMainModels: 2,
-        defaultMainModelIds: ['MiniMax-M2.5', 'deepseek-chat'],
+        defaultMainModelIds: ['MiniMax-M2.7', 'deepseek-chat'],
         subModelId: 'gpt-4o',
         subSessionContextMode: 'keep' as const,
         themeEffect: 'light' as const,
