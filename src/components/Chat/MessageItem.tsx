@@ -31,6 +31,19 @@ interface MessageItemProps {
     searchQuery?: string;
 }
 
+export const shouldWarnAboutStaleLaterTurns = (messages: Message[], messageIndex?: number) => {
+    if (typeof messageIndex !== 'number' || messageIndex < 0 || messageIndex >= messages.length) {
+        return false;
+    }
+
+    const currentMessage = messages[messageIndex];
+    if (currentMessage?.role !== 'assistant') {
+        return false;
+    }
+
+    return messageIndex < messages.length - 1;
+};
+
 const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIndex, searchQuery = '' }) => {
     const CONTEXT_MENU_WIDTH = 160;
     const CONTEXT_MENU_MARGIN = 10;
@@ -55,6 +68,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     const [selectedAnchorOccurrence, setSelectedAnchorOccurrence] = useState<number | null>(null);
     const [copiedSelection, setCopiedSelection] = useState(false);
     const [copiedTurn, setCopiedTurn] = useState(false);
+    const [showStaleTurnWarning, setShowStaleTurnWarning] = useState(false);
     const [contextMenu, setContextMenu] = useState<
         { x: number; y: number; type: 'delete-turn' }
         | { x: number; y: number; type: 'add-note'; selectedText: string }
@@ -65,6 +79,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     const contentRef = useRef<HTMLDivElement>(null);
     const copyResetTimerRef = useRef<number | null>(null);
     const selectionCopyResetTimerRef = useRef<number | null>(null);
+    const staleTurnWarningTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         const closeMenu = () => setContextMenu(null);
@@ -87,6 +102,9 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         }
         if (selectionCopyResetTimerRef.current !== null) {
             window.clearTimeout(selectionCopyResetTimerRef.current);
+        }
+        if (staleTurnWarningTimerRef.current !== null) {
+            window.clearTimeout(staleTurnWarningTimerRef.current);
         }
     }, []);
 
@@ -133,6 +151,19 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
     };
 
     const handleRegenerate = () => {
+        if (session && shouldWarnAboutStaleLaterTurns(session.messages, messageIndex)) {
+            setShowStaleTurnWarning(true);
+            if (staleTurnWarningTimerRef.current !== null) {
+                window.clearTimeout(staleTurnWarningTimerRef.current);
+            }
+            staleTurnWarningTimerRef.current = window.setTimeout(() => {
+                setShowStaleTurnWarning(false);
+                staleTurnWarningTimerRef.current = null;
+            }, 4000);
+        } else {
+            setShowStaleTurnWarning(false);
+        }
+
         dispatch(regenerateMessage({
             sessionId,
             messageId: message.id,
@@ -420,10 +451,17 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                     searchQuery={searchQuery}
                 />
                 {message.role === 'assistant' && (
-                    <TurnToolbar
-                        className="assistant-turn-toolbar"
-                        actions={assistantToolbarActions}
-                    />
+                    <>
+                        <TurnToolbar
+                            className="assistant-turn-toolbar"
+                            actions={assistantToolbarActions}
+                        />
+                        {showStaleTurnWarning && (
+                            <div className="turn-stale-warning" role="status">
+                                Regenerated this reply; later turns may be stale.
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 

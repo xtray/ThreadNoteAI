@@ -88,6 +88,13 @@ In AI tab, open `Settings`:
 - Reordering selected models affects which model becomes the default primary for the new round, but it does not create separate context histories.
 - Default model slots in Settings are only defaults for future selection order. They are not independent context slots.
 
+### Regenerate Behavior
+- Regenerating a turn uses the conversation history up to that turn, not the later turns below it.
+- If you regenerate an older turn in a multi-turn chat, the regenerated answer reflects that earlier historical context.
+- Later turns are not automatically recalculated after an earlier-turn regenerate.
+- After regenerating an upper turn, later turns may be stale and may no longer fully match the regenerated earlier answer.
+- In root multi-model chats, regenerate updates only the selected turn's round/tab reply instead of starting a full new round for all models.
+
 Supported providers include:
 - MiniMax
 - Zhipu GLM

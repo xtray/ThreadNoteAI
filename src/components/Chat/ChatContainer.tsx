@@ -97,6 +97,37 @@ export const projectRootSessionMessagesByRoundTabs = (session: ChatSession | nul
     });
 };
 
+export const shouldAutoScrollMessageList = (options: {
+    previous: {
+        sessionId: string;
+        messageCount: number;
+        lastMessageId: string | null;
+        lastMessageContent: string;
+        isLoading: boolean;
+    } | null;
+    next: {
+        sessionId: string;
+        messageCount: number;
+        lastMessageId: string | null;
+        lastMessageContent: string;
+        isLoading: boolean;
+    };
+    hasSearchQuery: boolean;
+}) => {
+    if (options.hasSearchQuery) return false;
+
+    const previous = options.previous;
+    const next = options.next;
+    const sessionChanged = !previous || previous.sessionId !== next.sessionId;
+    const messageCountIncreased = !!previous && next.messageCount > previous.messageCount;
+    const loadingMessageUpdated = !!previous
+        && next.isLoading
+        && previous.lastMessageId === next.lastMessageId
+        && previous.lastMessageContent !== next.lastMessageContent;
+
+    return sessionChanged || messageCountIncreased || loadingMessageUpdated;
+};
+
 const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
     const dispatch = useDispatch();
     const activeSessionId = useSelector((state: RootState) => state.sessions.activeSessionId);
@@ -152,15 +183,12 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
         };
 
         const previous = previousScrollStateRef.current;
-        const sessionChanged = !previous || previous.sessionId !== nextState.sessionId;
-        const messageCountIncreased = !!previous && nextState.messageCount > previous.messageCount;
-        const loadingStarted = !!previous && !previous.isLoading && nextState.isLoading;
-        const loadingMessageUpdated = !!previous
-            && nextState.isLoading
-            && previous.lastMessageId === nextState.lastMessageId
-            && previous.lastMessageContent !== nextState.lastMessageContent;
 
-        if (!normalizedSearchQuery && (sessionChanged || messageCountIncreased || loadingStarted || loadingMessageUpdated)) {
+        if (shouldAutoScrollMessageList({
+            previous,
+            next: nextState,
+            hasSearchQuery: !!normalizedSearchQuery,
+        })) {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
 

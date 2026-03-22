@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add a `Regenerate` action to every assistant turn that deletes the current reply content and reruns generation from the previous user question.
+**Goal:** Add a `Regenerate` action to every assistant turn that reruns generation for that reply from the previous user question using the historical context up to that turn.
 
-**Architecture:** Keep regenerate behavior as a session-level saga action. The UI only dispatches the target assistant message id, session state removes that assistant message, and saga reuses the existing `sessions/sendMessage` pipeline so single-model and root multi-model generation stay consistent.
+**Architecture:** Keep regenerate behavior as a session-level saga action. The UI only dispatches the target assistant message id, and saga reconstructs model input from session history up to the targeted assistant turn. Earlier-turn regenerate does not include later turns below it, so those later turns may become stale and should be warned about in product copy or documentation.
 
 **Tech Stack:** React, Redux Toolkit, redux-saga, TypeScript, Vitest, CSS
 
@@ -30,7 +30,8 @@ Expected: FAIL because regenerate UI/state support does not exist yet.
 - Modify: `src/store/sagas/aiSaga.test.ts`
 
 **Step 1: Write failing test**
-- Add a test that validates regenerate finds the previous user message and routes back into send handling.
+- Add a test that validates regenerate finds the previous user message and rebuilds context only up to the targeted assistant turn.
+- Add a root multi-model test that validates regenerate updates only the targeted round/tab reply instead of creating a fresh round.
 
 **Step 2: Run test to verify RED**
 Run: `npm test -- src/store/sagas/aiSaga.test.ts`
@@ -48,16 +49,24 @@ Expected: FAIL because regenerate action handling does not exist yet.
 **Step 2: Add regenerate saga entry**
 - Add a `sessions/regenerateMessage` saga handler.
 - Resolve the target assistant message and its preceding user message.
-- Remove the targeted assistant message.
-- Dispatch the existing send flow with the recovered prompt.
+- Rebuild model input from session history before the targeted assistant turn.
+- Regenerate the targeted reply in place.
+- For root multi-model rounds, update only the selected round/tab reply.
 
 **Step 3: Keep existing guards**
 - Ignore regenerate for missing session/message, user-role targets, missing prior user prompt, or sessions already loading.
+
+**Step 4: Document stale-turn warning**
+- Document that regenerating an upper turn does not automatically recalculate later turns.
+- Warn that later turns may be stale after an earlier-turn regenerate.
+- Show the warning inline on the regenerated message card and auto-dismiss it after a short delay.
 
 ### Task 4: Implement regenerate UI
 
 **Files:**
 - Modify: `src/components/Chat/MessageItem.tsx`
+- Modify: `src/components/Chat/MessageItem.test.tsx`
+- Modify: `src/index.css`
 
 **Step 1: Add toolbar action**
 - Render `Regenerate` beside `Copy` for assistant turns.
@@ -65,6 +74,11 @@ Expected: FAIL because regenerate action handling does not exist yet.
 
 **Step 2: Wire action dispatch**
 - Dispatch the new regenerate action with `sessionId` and `messageId`.
+
+**Step 3: Add stale-turn warning**
+- Detect when the regenerated assistant turn has later turns below it in the same session.
+- Show a short inline warning after regenerate: later turns may be stale.
+- Auto-dismiss the warning after a short timeout.
 
 ### Task 5: Verification
 

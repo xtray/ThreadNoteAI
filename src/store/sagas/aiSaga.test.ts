@@ -4,7 +4,7 @@ import {
     resolveRootSelectedModelIds,
     shouldUseRootMultiModelFlow,
 } from './aiSaga';
-import { sendMessage } from '../slices/sessionSlice';
+import { sendMessage, setSessionLoading } from '../slices/sessionSlice';
 import { put, select } from 'redux-saga/effects';
 
 describe('aiSaga model selection', () => {
@@ -106,5 +106,82 @@ describe('aiSaga regenerate flow', () => {
             contextEndIndexExclusive: 1,
         })));
         expect(generator.next().done).toBe(true);
+    });
+
+    it('regenerates only the active tab model inside the existing round for root multi-model sessions', () => {
+        const action = {
+            type: 'sessions/regenerateMessage',
+            payload: {
+                sessionId: 'main',
+                messageId: 'a1',
+            },
+        };
+
+        const state = {
+            config: {
+                apiKeys: {},
+                customProviders: [],
+            },
+            sessions: {
+                sessions: {
+                    main: {
+                        id: 'main',
+                        parentId: null,
+                        anchorText: null,
+                        anchorMessageId: null,
+                        modelId: 'model-a',
+                        isLoading: false,
+                        multiReplyEnabled: true,
+                        messages: [
+                            { id: 'u1', role: 'user', content: 'Question', timestamp: 1 },
+                            { id: 'a1', role: 'assistant', content: 'Fallback', timestamp: 2, roundId: 'round-1', modelId: 'model-a' },
+                        ],
+                        multiModel: {
+                            rounds: {
+                                'round-1': {
+                                    id: 'round-1',
+                                    modelOrder: ['model-a', 'model-b'],
+                                    modelReplies: {
+                                        'model-a': { content: 'A', status: 'done' },
+                                        'model-b': { content: 'B', status: 'done' },
+                                    },
+                                },
+                            },
+                            activeRoundId: 'round-1',
+                            activeTabModelId: 'model-b',
+                            roundActiveTabModelIds: {
+                                'round-1': 'model-b',
+                            },
+                            primaryModelId: 'model-a',
+                            lastUsedSelectedModelIds: ['model-a', 'model-b'],
+                        },
+                    },
+                },
+            },
+        } as any;
+
+        const generator = handleRegenerateMessage(action);
+
+        expect(generator.next().value).toEqual(select());
+        expect(generator.next(state).value).toEqual(put(setSessionLoading({
+            sessionId: 'main',
+            isLoading: true,
+        })));
+        const callEffect = generator.next().value as any;
+        expect(callEffect?.payload?.fn?.name).toBe('streamRootModelReply');
+        expect(callEffect?.payload?.args?.[0]).toEqual({
+            sessionId: 'main',
+            roundId: 'round-1',
+            modelId: 'model-b',
+            assistantMessageId: 'a1',
+            messagesForAI: [
+                { id: 'u1', role: 'user', content: 'Question', timestamp: 1 },
+            ],
+            config: {
+                apiKeys: {},
+                customProviders: [],
+            },
+            controllers: expect.any(Map),
+        });
     });
 });

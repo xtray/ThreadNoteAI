@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import sessionReducer, { ChatSession, Message, SessionState } from '../../store/slices/sessionSlice';
 import configReducer from '../../store/slices/configSlice';
 import notesReducer from '../../store/slices/notesSlice';
-import MessageItem from './MessageItem';
+import MessageItem, { shouldWarnAboutStaleLaterTurns } from './MessageItem';
 
 const buildSessionState = (messages: Message[]): SessionState => ({
     activeSessionId: 'main',
@@ -68,6 +68,28 @@ describe('MessageItem regenerate action', () => {
         const html = renderMessageItem(messages[0], messages);
 
         expect(html).not.toContain('Regenerate');
+    });
+
+    it('warns about stale later turns only for non-latest assistant replies', () => {
+        const messages: Message[] = [
+            { id: 'u1', role: 'user', content: 'Question 1', timestamp: 1 },
+            { id: 'a1', role: 'assistant', content: 'Answer 1', timestamp: 2, modelId: 'deepseek-chat' },
+            { id: 'u2', role: 'user', content: 'Question 2', timestamp: 3 },
+            { id: 'a2', role: 'assistant', content: 'Answer 2', timestamp: 4, modelId: 'deepseek-chat' },
+        ];
+
+        expect(shouldWarnAboutStaleLaterTurns(messages, 1)).toBe(true);
+        expect(shouldWarnAboutStaleLaterTurns(messages, 3)).toBe(false);
+        expect(shouldWarnAboutStaleLaterTurns(messages, 2)).toBe(false);
+    });
+
+    it('shows a temporary stale-turn warning after regenerate in source', () => {
+        const source = fs.readFileSync(new URL('./MessageItem.tsx', import.meta.url), 'utf8');
+
+        expect(source).toContain('showStaleTurnWarning');
+        expect(source).toContain('later turns may be stale');
+        expect(source).toContain('setShowStaleTurnWarning(true)');
+        expect(source).toContain('window.setTimeout');
     });
 
     it('requires confirmation before deleting a main-thread turn', () => {

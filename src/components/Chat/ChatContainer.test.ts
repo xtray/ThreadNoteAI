@@ -3,6 +3,7 @@ import {
     orderModelOptionsBySelection,
     projectRootSessionMessagesByRoundTabs,
     resolveRoundTabModelId,
+    shouldAutoScrollMessageList,
 } from './ChatContainer';
 
 describe('orderModelOptionsBySelection', () => {
@@ -123,5 +124,47 @@ describe('projectRootSessionMessagesByRoundTabs', () => {
 
         expect(assistants.map((m) => m.content)).toEqual(['R1-B', 'R2-C']);
         expect(assistants.map((m) => m.modelId)).toEqual(['model-b', 'model-c']);
+    });
+});
+
+describe('shouldAutoScrollMessageList', () => {
+    it('does not scroll to bottom when regenerating an older turn only flips loading on', () => {
+        expect(shouldAutoScrollMessageList({
+            previous: {
+                sessionId: 'main',
+                messageCount: 6,
+                lastMessageId: 'a3',
+                lastMessageContent: 'Latest answer',
+                isLoading: false,
+            },
+            next: {
+                sessionId: 'main',
+                messageCount: 6,
+                lastMessageId: 'a3',
+                lastMessageContent: 'Latest answer',
+                isLoading: true,
+            },
+            hasSearchQuery: false,
+        })).toBe(false);
+    });
+
+    it('scrolls when a new message is appended at the bottom', () => {
+        expect(shouldAutoScrollMessageList({
+            previous: {
+                sessionId: 'main',
+                messageCount: 5,
+                lastMessageId: 'u3',
+                lastMessageContent: 'Question',
+                isLoading: false,
+            },
+            next: {
+                sessionId: 'main',
+                messageCount: 6,
+                lastMessageId: 'a3',
+                lastMessageContent: '',
+                isLoading: true,
+            },
+            hasSearchQuery: false,
+        })).toBe(true);
     });
 });

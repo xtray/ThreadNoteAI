@@ -1279,6 +1279,14 @@ html,
     justify-content: flex-end;
 }
 
+.turn-stale-warning {
+    margin-top: 7px;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: #9a3412;
+    text-align: right;
+}
+
 .overlay-turn-toolbar {
     justify-content: flex-end;
 }

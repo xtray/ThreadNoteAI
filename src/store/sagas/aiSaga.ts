@@ -91,6 +91,29 @@ const findPreviousUserMessage = (messages: Message[], messageId: string) => {
     return null;
 };
 
+const resolveRegenerateRoundModelId = (
+    session: RootState['sessions']['sessions'][string],
+    assistantMessage: Message,
+) => {
+    if (session.parentId !== null || !assistantMessage.roundId || !session.multiModel) {
+        return null;
+    }
+
+    const round = session.multiModel.rounds[assistantMessage.roundId];
+    if (!round) return null;
+
+    const roundTabModelId = session.multiModel.roundActiveTabModelIds?.[assistantMessage.roundId];
+    if (roundTabModelId && round.modelOrder.includes(roundTabModelId)) {
+        return roundTabModelId;
+    }
+
+    if (assistantMessage.modelId && round.modelOrder.includes(assistantMessage.modelId)) {
+        return assistantMessage.modelId;
+    }
+
+    return round.modelOrder[0] || null;
+};
+
 export const resolveRootSelectedModelIds = (options: {
     selectedModelIdsOverride?: string[];
     lastUsedSelectedModelIds?: string[];
@@ -176,7 +199,7 @@ const maybeMirrorPrimaryToCanonical = (options: {
     }));
 };
 
-const streamRootModelReply = async (options: {
+export const streamRootModelReply = async (options: {
     sessionId: string;
     roundId: string;
     modelId: string;
@@ -484,9 +507,39 @@ export function* handleRegenerateMessage(action: RegenerateMessageAction) {
 
     const assistantIndex = session.messages.findIndex((message) => message.id === action.payload.messageId);
     if (assistantIndex < 0) return;
+    const assistantMessage = session.messages[assistantIndex];
 
     const previousUserMessage = findPreviousUserMessage(session.messages, action.payload.messageId);
     if (!previousUserMessage) return;
+
+    const regenerateRoundId = assistantMessage.roundId;
+    const regenerateModelId = resolveRegenerateRoundModelId(session, assistantMessage);
+    if (regenerateRoundId && regenerateModelId) {
+        const messagesForAI = getMessagesForAI(state, action.payload.sessionId, {
+            endIndexExclusive: assistantIndex,
+        });
+        const modelControllers = new Map<string, AbortController>();
+        controllersBySession.set(action.payload.sessionId, modelControllers);
+        yield put(setSessionLoading({ sessionId: action.payload.sessionId, isLoading: true }));
+        try {
+            yield call(streamRootModelReply, {
+                sessionId: action.payload.sessionId,
+                roundId: regenerateRoundId,
+                modelId: regenerateModelId,
+                assistantMessageId: action.payload.messageId,
+                messagesForAI,
+                config: {
+                    apiKeys: state.config.apiKeys,
+                    customProviders: state.config.customProviders,
+                },
+                controllers: modelControllers,
+            });
+        } finally {
+            controllersBySession.delete(action.payload.sessionId);
+            yield put(setSessionLoading({ sessionId: action.payload.sessionId, isLoading: false }));
+        }
+        return;
+    }
 
     yield put(sendMessage({
         sessionId: action.payload.sessionId,
