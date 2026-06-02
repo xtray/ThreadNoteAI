@@ -13,6 +13,7 @@ type CreateSubSessionArtifactsArgs = {
     modelId: string;
     contextMode: 'new' | 'keep';
     timestamp: number;
+    anchorOccurrenceIndex?: number;
 };
 
 export const createSubSessionArtifacts = ({
@@ -22,6 +23,7 @@ export const createSubSessionArtifacts = ({
     modelId,
     contextMode,
     timestamp,
+    anchorOccurrenceIndex,
 }: CreateSubSessionArtifactsArgs): CreateSubSessionArtifacts => {
     const trimmedAnchor = anchorText.trim();
     const subSessionId = `sub-${timestamp}`;
@@ -49,6 +51,7 @@ export const createSubSessionArtifacts = ({
             subSessionId,
             anchorText: trimmedAnchor,
             createdAt: timestamp,
+            ...(typeof anchorOccurrenceIndex === 'number' ? { anchorOccurrenceIndex } : {}),
         },
     };
 };

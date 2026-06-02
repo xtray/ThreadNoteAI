@@ -15,6 +15,7 @@ export interface MessageAnnotation {
     subSessionId: string;
     anchorText: string;
     createdAt: number;
+    anchorOccurrenceIndex?: number;
 }
 
 export type MultiModelReplyStatus = 'idle' | 'streaming' | 'done' | 'error';

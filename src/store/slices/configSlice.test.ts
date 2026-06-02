@@ -60,7 +60,20 @@ describe('configSlice multi-model settings', () => {
 
         expect(state.maxConcurrentMainModels).toBe(3);
         expect(state.defaultMainModelIds.length).toBe(3);
-        expect(state.defaultMainModelIds[0]).toBe('deepseek-chat');
+        expect(state.defaultMainModelIds).toEqual(['', '', '']);
+        expect(state.mainModelId).toBe(DEFAULT_MODEL_ID);
+    });
+
+    it('includes MiniMax M3 as the default built-in model', async () => {
+        await loadConfigSlice();
+
+        expect(DEFAULT_MODEL_ID).toBe('MiniMax-M3');
+        expect(AVAILABLE_MODELS).toContainEqual({
+            id: 'MiniMax-M3',
+            providerId: 'minimax',
+            name: 'MiniMax-M3',
+            displayName: 'MiniMax M3',
+        });
     });
 
     it('sanitizes saved values for max/default main models', async () => {
@@ -73,11 +86,7 @@ describe('configSlice multi-model settings', () => {
         const state = reducer(undefined, { type: '@@INIT' });
 
         expect(state.maxConcurrentMainModels).toBe(3);
-        expect(state.defaultMainModelIds.length).toBe(3);
-        expect(new Set(state.defaultMainModelIds).size).toBe(3);
-        state.defaultMainModelIds.forEach((modelId: string) => {
-            expect(AVAILABLE_MODELS.some((m) => m.id === modelId)).toBe(true);
-        });
+        expect(state.defaultMainModelIds).toEqual(['deepseek-chat', '', '']);
     });
 
     it('caps slot count and persists when max concurrent changes', async () => {
@@ -132,6 +141,34 @@ describe('configSlice multi-model settings', () => {
         const persisted = JSON.parse(storage[STORAGE_KEY]);
         expect(persisted.defaultMainModelIds).toEqual(['gpt-4o', 'deepseek-chat']);
         expect(persisted.mainModelId).toBe('gpt-4o');
+    });
+
+    it('allows main model slots to be cleared and persisted', async () => {
+        const { reducer, storage } = await loadConfigSlice({
+            maxConcurrentMainModels: 3,
+            defaultMainModelIds: [DEFAULT_MODEL_ID, 'deepseek-chat', 'gpt-4o'],
+        });
+
+        const start = reducer(undefined, { type: '@@INIT' });
+        const slot1Cleared = reducer(start, {
+            type: 'config/setDefaultMainModelId',
+            payload: { index: 0, modelId: '' },
+        });
+        const slot2Cleared = reducer(slot1Cleared, {
+            type: 'config/setDefaultMainModelId',
+            payload: { index: 1, modelId: '' },
+        });
+        const allCleared = reducer(slot2Cleared, {
+            type: 'config/setDefaultMainModelId',
+            payload: { index: 2, modelId: '' },
+        });
+
+        expect(allCleared.defaultMainModelIds).toEqual(['', '', '']);
+        expect(allCleared.mainModelId).toBe(DEFAULT_MODEL_ID);
+
+        const persisted = JSON.parse(storage[STORAGE_KEY]);
+        expect(persisted.defaultMainModelIds).toEqual(['', '', '']);
+        expect(persisted.mainModelId).toBe(DEFAULT_MODEL_ID);
     });
 
     it('defaults themeEffect to light and persists valid theme updates', async () => {

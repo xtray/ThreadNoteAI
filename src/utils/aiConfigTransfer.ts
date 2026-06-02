@@ -60,34 +60,23 @@ const isModelIdAvailable = (modelIds: string[], modelId: string) => modelIds.inc
 const normalizeDefaultMainModelIds = (
     rawDefaultModelIds: unknown,
     modelIds: string[],
-    maxConcurrentMainModels: number,
-    fallbackModelId: string
+    maxConcurrentMainModels: number
 ) => {
     const preferredModelIds = asStringArray(rawDefaultModelIds);
     const uniqueValidModelIds: string[] = [];
 
     for (const modelId of preferredModelIds) {
         if (uniqueValidModelIds.length >= maxConcurrentMainModels) break;
+        if (!modelId) {
+            uniqueValidModelIds.push('');
+            continue;
+        }
         if (!isModelIdAvailable(modelIds, modelId) || uniqueValidModelIds.includes(modelId)) continue;
         uniqueValidModelIds.push(modelId);
     }
 
-    if (
-        uniqueValidModelIds.length < maxConcurrentMainModels &&
-        isModelIdAvailable(modelIds, fallbackModelId) &&
-        !uniqueValidModelIds.includes(fallbackModelId)
-    ) {
-        uniqueValidModelIds.push(fallbackModelId);
-    }
-
-    for (const modelId of modelIds) {
-        if (uniqueValidModelIds.length >= maxConcurrentMainModels) break;
-        if (uniqueValidModelIds.includes(modelId)) continue;
-        uniqueValidModelIds.push(modelId);
-    }
-
-    if (uniqueValidModelIds.length === 0) {
-        uniqueValidModelIds.push(DEFAULT_MODEL_ID);
+    while (uniqueValidModelIds.length < maxConcurrentMainModels) {
+        uniqueValidModelIds.push('');
     }
 
     return uniqueValidModelIds.slice(0, maxConcurrentMainModels);
@@ -135,10 +124,9 @@ export const importAiConfigPayload = (
     const defaultMainModelIds = normalizeDefaultMainModelIds(
         rawConfig?.defaultMainModelIds,
         availableModelIds,
-        maxConcurrentMainModels,
-        fallbackMainModelId
+        maxConcurrentMainModels
     );
-    const mainModelId = defaultMainModelIds[0] || DEFAULT_MODEL_ID;
+    const mainModelId = defaultMainModelIds.find((modelId) => isModelIdAvailable(availableModelIds, modelId)) || DEFAULT_MODEL_ID;
     const subModelId = typeof rawConfig?.subModelId === 'string' && isModelIdAvailable(availableModelIds, rawConfig.subModelId)
         ? rawConfig.subModelId
         : fallbackMainModelId;

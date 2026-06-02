@@ -50,6 +50,14 @@ export const orderModelOptionsBySelection = <T extends { id: string }>(
     return [...orderedSelectedOptions, ...remainingOptions];
 };
 
+export const shouldPromptForSlot1MainModel = (options: {
+    isRootSession: boolean;
+    isMultiReplyEnabled: boolean;
+    selectedModelIds: string[];
+}) => options.isRootSession
+    && options.isMultiReplyEnabled
+    && uniqueNonEmptyModelIds(options.selectedModelIds).length === 0;
+
 export const resolveRoundTabModelId = (
     multiModel: MultiModelSessionState | undefined,
     round: MultiModelRound | null | undefined,
@@ -223,6 +231,14 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
 
     const handleSend = () => {
         if (!inputText.trim() || !activeSessionId || session?.isLoading) return;
+        if (shouldPromptForSlot1MainModel({
+            isRootSession: !!isRootSession,
+            isMultiReplyEnabled,
+            selectedModelIds: nextRoundModelIds,
+        })) {
+            window.alert('请至少在 Slot 1 选择一个大模型');
+            return;
+        }
 
         dispatch({
             type: 'sessions/sendMessage',
@@ -276,7 +292,6 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ searchQuery = '' }) => {
 
         const isSelected = nextRoundModelIds.includes(modelId);
         if (isSelected) {
-            if (nextRoundModelIds.length <= 1) return;
             setNextRoundModelIds(nextRoundModelIds.filter((id) => id !== modelId));
             setHasSelectionOverride(true);
             return;

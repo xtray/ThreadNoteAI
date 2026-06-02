@@ -214,9 +214,9 @@ export const SettingsPanelContent: React.FC<{
                         </p>
                         <div className="custom-model-list">
                             {Array.from({ length: config.maxConcurrentMainModels }, (_, slotIndex) => {
-                                const selectedId = config.defaultMainModelIds[slotIndex] || config.defaultMainModelIds[0];
+                                const selectedId = config.defaultMainModelIds[slotIndex] ?? '';
                                 const selectedInOtherSlots = new Set(
-                                    config.defaultMainModelIds.filter((modelId, index) => index !== slotIndex)
+                                    config.defaultMainModelIds.filter((modelId, index) => index !== slotIndex && modelId)
                                 );
 
                                 return (
@@ -231,6 +231,7 @@ export const SettingsPanelContent: React.FC<{
                                                 }))
                                             }
                                         >
+                                            <option value="">No model</option>
                                             <optgroup label="Built-in">
                                                 {AVAILABLE_MODELS.map((m) => (
                                                     <option

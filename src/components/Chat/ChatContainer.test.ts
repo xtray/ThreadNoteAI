@@ -3,6 +3,7 @@ import {
     orderModelOptionsBySelection,
     projectRootSessionMessagesByRoundTabs,
     resolveRoundTabModelId,
+    shouldPromptForSlot1MainModel,
 } from './ChatContainer';
 
 describe('orderModelOptionsBySelection', () => {
@@ -29,6 +30,28 @@ describe('orderModelOptionsBySelection', () => {
         const ordered = orderModelOptionsBySelection(options, ['mX', 'm2', 'm2']);
 
         expect(ordered.map((item) => item.id)).toEqual(['m2', 'm1', 'm3']);
+    });
+});
+
+describe('shouldPromptForSlot1MainModel', () => {
+    it('prompts only for root multi-reply sends with no selected models', () => {
+        expect(shouldPromptForSlot1MainModel({
+            isRootSession: true,
+            isMultiReplyEnabled: true,
+            selectedModelIds: ['', '', ''],
+        })).toBe(true);
+
+        expect(shouldPromptForSlot1MainModel({
+            isRootSession: true,
+            isMultiReplyEnabled: true,
+            selectedModelIds: ['', 'deepseek-chat', ''],
+        })).toBe(false);
+
+        expect(shouldPromptForSlot1MainModel({
+            isRootSession: false,
+            isMultiReplyEnabled: true,
+            selectedModelIds: [],
+        })).toBe(false);
     });
 });
 

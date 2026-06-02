@@ -37,6 +37,7 @@ describe('createSubSessionArtifacts', () => {
             modelId: 'glm-4.5',
             contextMode: 'new',
             timestamp: 123,
+            anchorOccurrenceIndex: 2,
         });
 
         expect(result.subSessionId).toBe('sub-123');
@@ -45,6 +46,7 @@ describe('createSubSessionArtifacts', () => {
             subSessionId: 'sub-123',
             anchorText: 'Beta',
             createdAt: 123,
+            anchorOccurrenceIndex: 2,
         });
         expect(result.nextSession.parentId).toBe('session-1');
         expect(result.nextSession.anchorText).toBe('Beta');

@@ -132,8 +132,7 @@ describe('aiConfigTransfer', () => {
         }, buildConfig());
 
         expect(imported.apiKeys).toEqual({});
-        expect(imported.defaultMainModelIds[0]).toBe('MiniMax-M2.5');
-        expect(imported.defaultMainModelIds.length).toBe(3);
+        expect(imported.defaultMainModelIds).toEqual(['', '', '']);
         expect(imported.subSessionContextMode).toBe('new');
     });
 });

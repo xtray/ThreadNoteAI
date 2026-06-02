@@ -14,7 +14,7 @@ export interface Model {
     displayName: string;
 }
 
-export const DEFAULT_MODEL_ID = 'MiniMax-M2.5';
+export const DEFAULT_MODEL_ID = 'MiniMax-M3';
 
 // ─── Providers ───────────────────────────────────────────────
 export const SUPPORTED_PROVIDERS: ModelProvider[] = [
@@ -71,6 +71,7 @@ export const SUPPORTED_PROVIDERS: ModelProvider[] = [
 // ─── Models ──────────────────────────────────────────────────
 export const AVAILABLE_MODELS: Model[] = [
     // MiniMax
+    { id: 'MiniMax-M3', providerId: 'minimax', name: 'MiniMax-M3', displayName: 'MiniMax M3' },
     { id: 'MiniMax-M2.5', providerId: 'minimax', name: 'MiniMax-M2.5', displayName: 'MiniMax M2.5' },
     { id: 'MiniMax-M2.5-highspeed', providerId: 'minimax', name: 'MiniMax-M2.5-highspeed', displayName: 'MiniMax M2.5 (Fast)' },
 

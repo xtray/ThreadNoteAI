@@ -13,7 +13,7 @@ export interface ConfigState {
     apiKeys: Record<string, string>;   // providerId → apiKey
     mainModelId: string;               // default model for main thread
     maxConcurrentMainModels: number;   // 1..3
-    defaultMainModelIds: string[];     // selected main models (length 1..3)
+    defaultMainModelIds: string[];     // selected main models; empty string means no model selected
     subModelId: string;                // default model for sub-thread
     subSessionContextMode: 'new' | 'keep';
     customProviders: CustomProviderConfig[];
@@ -55,14 +55,6 @@ const asStringArray = (value: unknown): string[] => {
     return value.filter((item): item is string => typeof item === 'string');
 };
 
-const getAvailableModelIds = (state: ConfigState): string[] => {
-    const builtInModelIds = AVAILABLE_MODELS.map((model) => model.id);
-    const customModelIds = state.customProviders.flatMap((provider) =>
-        provider.models.map((modelName) => buildCustomModelId(provider.id, modelName))
-    );
-    return [...builtInModelIds, ...customModelIds];
-};
-
 const initialState: ConfigState = {
     apiKeys: saved.apiKeys ?? {},
     mainModelId: saved.mainModelId ?? DEFAULT_MODEL_ID,
@@ -85,29 +77,23 @@ const isModelIdAvailable = (state: ConfigState, modelId: string) => {
 const sanitizeDefaultMainModelIds = (
     state: ConfigState,
     rawDefaultModelIds: unknown,
-    maxConcurrentMainModels: number,
-    fallbackMainModelId: string
+    maxConcurrentMainModels: number
 ) => {
     const preferredModelIds = asStringArray(rawDefaultModelIds);
-    if (preferredModelIds.length === 0) {
-        preferredModelIds.push(fallbackMainModelId || DEFAULT_MODEL_ID);
-    }
 
     const uniqueValidModelIds: string[] = [];
     for (const modelId of preferredModelIds) {
         if (uniqueValidModelIds.length >= maxConcurrentMainModels) break;
+        if (!modelId) {
+            uniqueValidModelIds.push('');
+            continue;
+        }
         if (!isModelIdAvailable(state, modelId) || uniqueValidModelIds.includes(modelId)) continue;
         uniqueValidModelIds.push(modelId);
     }
 
-    for (const modelId of getAvailableModelIds(state)) {
-        if (uniqueValidModelIds.length >= maxConcurrentMainModels) break;
-        if (uniqueValidModelIds.includes(modelId)) continue;
-        uniqueValidModelIds.push(modelId);
-    }
-
-    if (uniqueValidModelIds.length === 0) {
-        uniqueValidModelIds.push(DEFAULT_MODEL_ID);
+    while (uniqueValidModelIds.length < maxConcurrentMainModels) {
+        uniqueValidModelIds.push('');
     }
 
     return uniqueValidModelIds.slice(0, maxConcurrentMainModels);
@@ -127,13 +113,12 @@ const normalizeMainModelSettings = (
     const nextDefaultMainModelIds = sanitizeDefaultMainModelIds(
         state,
         options?.defaultMainModelIds ?? state.defaultMainModelIds,
-        nextMaxConcurrentMainModels,
-        options?.mainModelId ?? state.mainModelId
+        nextMaxConcurrentMainModels
     );
 
     state.maxConcurrentMainModels = nextMaxConcurrentMainModels;
     state.defaultMainModelIds = nextDefaultMainModelIds;
-    state.mainModelId = nextDefaultMainModelIds[0];
+    state.mainModelId = nextDefaultMainModelIds.find((modelId) => isModelIdAvailable(state, modelId)) || DEFAULT_MODEL_ID;
 };
 
 const ensureSelectedModels = (state: ConfigState) => {
@@ -179,8 +164,8 @@ const configSlice = createSlice({
         ) => {
             const { index, modelId } = action.payload;
             if (index < 0 || index >= state.maxConcurrentMainModels) return;
-            if (!isModelIdAvailable(state, modelId)) return;
-            if (state.defaultMainModelIds.some((selectedModelId, selectedIndex) => selectedIndex !== index && selectedModelId === modelId)) {
+            if (modelId && !isModelIdAvailable(state, modelId)) return;
+            if (modelId && state.defaultMainModelIds.some((selectedModelId, selectedIndex) => selectedIndex !== index && selectedModelId === modelId)) {
                 return;
             }
             state.defaultMainModelIds[index] = modelId;

@@ -6,10 +6,10 @@ import { MessageAnnotation } from '../../store/slices/sessionSlice';
 import { copyTextToClipboard } from './turnUtils';
 import { normalizeSearchQuery } from '../../utils/sidebarSearch';
 import { highlightReactNode, renderWithSearchHighlight } from '../../utils/searchHighlight';
+import { findAnnotationTextMatch, getSegmentHighlightRanges, safelySurroundRangeContents } from './annotationHighlight';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const extractNodeText = (value: React.ReactNode): string => {
     if (typeof value === 'string' || typeof value === 'number') {
         return String(value);
@@ -112,7 +112,6 @@ const MessageContent: React.FC<MessageContentProps> = ({
                 if (!text.trim()) return NodeFilter.FILTER_SKIP;
                 const parent = (node as Text).parentElement;
                 if (!parent) return NodeFilter.FILTER_SKIP;
-                if (parent.closest('.annotation-highlight')) return NodeFilter.FILTER_SKIP;
                 return NodeFilter.FILTER_ACCEPT;
             },
         });
@@ -130,63 +129,37 @@ const MessageContent: React.FC<MessageContentProps> = ({
         }
         if (segments.length === 0 || !fullText) return;
 
-        let matchStart = fullText.indexOf(anchorText);
-        let matchLength = anchorText.length;
-        if (matchStart < 0) {
-            const loosePattern = escapeRegExp(anchorText).replace(/\s+/g, '\\s+');
-            const looseRegex = new RegExp(loosePattern);
-            const looseMatch = looseRegex.exec(fullText);
-            if (!looseMatch || looseMatch.index < 0) return;
-            matchStart = looseMatch.index;
-            matchLength = looseMatch[0].length;
-        }
-        const matchEnd = matchStart + matchLength;
+        const match = findAnnotationTextMatch(fullText, anchorText, annotation.anchorOccurrenceIndex);
+        if (!match) return;
+        const matchEnd = match.start + match.length;
 
-        const resolvePoint = (pos: number, preferNextAtBoundary: boolean) => {
-            for (let i = 0; i < segments.length; i += 1) {
-                const seg = segments[i];
-                const segLen = (seg.node.textContent || '').length;
-                if (pos < seg.end) {
-                    return { node: seg.node, offset: Math.max(0, Math.min(segLen, pos - seg.start)) };
-                }
-                if (pos === seg.end) {
-                    if (preferNextAtBoundary && i + 1 < segments.length) {
-                        continue;
-                    }
-                    return { node: seg.node, offset: segLen };
-                }
-            }
-            const lastSeg = segments[segments.length - 1];
-            return { node: lastSeg.node, offset: (lastSeg.node.textContent || '').length };
-        };
+        const highlightRanges = getSegmentHighlightRanges(segments, match.start, matchEnd);
+        if (highlightRanges.length === 0) return;
 
-        const startPoint = resolvePoint(matchStart, true);
-        const endPoint = resolvePoint(matchEnd, false);
-        if (!startPoint.node || !endPoint.node) return;
+        const highlightedSpans = highlightRanges.map((highlightRange) => {
+            if (highlightRange.node.parentElement?.closest('.annotation-highlight')) return null;
 
-        const range = document.createRange();
-        range.setStart(startPoint.node, startPoint.offset);
-        range.setEnd(endPoint.node, endPoint.offset);
+            const range = document.createRange();
+            range.setStart(highlightRange.node, highlightRange.startOffset);
+            range.setEnd(highlightRange.node, highlightRange.endOffset);
 
-        const span = document.createElement('span');
-        span.className = 'annotation-highlight';
-        span.setAttribute('data-generated', 'true');
-        span.setAttribute('data-annotation-id', annotation.id);
-        span.setAttribute('data-sub-session-id', annotation.subSessionId);
-        span.setAttribute('title', 'Open sub-session');
+            const span = document.createElement('span');
+            span.className = 'annotation-highlight';
+            span.setAttribute('data-generated', 'true');
+            span.setAttribute('data-annotation-id', annotation.id);
+            span.setAttribute('data-sub-session-id', annotation.subSessionId);
+            span.setAttribute('title', 'Open sub-session');
 
-        try {
-            range.surroundContents(span);
-        } catch {
-            const fragment = range.extractContents();
-            span.appendChild(fragment);
-            range.insertNode(span);
-        }
+            return safelySurroundRangeContents(range, span) ? span : null;
+        }).filter((span): span is HTMLSpanElement => span !== null);
+
+        const lastSpan = highlightedSpans[highlightedSpans.length - 1];
+        if (!lastSpan) return;
 
         const bubble = document.createElement('span');
         bubble.className = 'annotation-bubble-icon';
         bubble.textContent = '···';
-        span.appendChild(bubble);
+        lastSpan.appendChild(bubble);
     };
 
     // Annotation highlights are injected into the rendered markdown DOM, so they

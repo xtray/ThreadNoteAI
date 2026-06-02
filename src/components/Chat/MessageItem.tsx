@@ -22,6 +22,8 @@ import { buildTurnMarkdown, copyTextToClipboard, findTurnQuestionContent, stripT
 import { Check, Copy, RotateCcw } from 'lucide-react';
 import { clearBrowserSelection } from './browserSelection';
 import { getTrimmedRangeText } from './rangeText';
+import { createSubSessionArtifacts } from './subSessionCreation';
+import { getAnchorOccurrenceIndex } from './annotationHighlight';
 
 interface MessageItemProps {
     message: Message;
@@ -51,6 +53,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         height: number;
     }>>([]);
     const [selectedText, setSelectedText] = useState('');
+    const [selectedAnchorOccurrenceIndex, setSelectedAnchorOccurrenceIndex] = useState(0);
     const [copiedSelection, setCopiedSelection] = useState(false);
     const [copiedTurn, setCopiedTurn] = useState(false);
     const [contextMenu, setContextMenu] = useState<
@@ -91,6 +94,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         setShowOverlayBtn(false);
         setSelectionHighlightRects([]);
         setCopiedSelection(false);
+        setSelectedAnchorOccurrenceIndex(0);
         if (selectionCopyResetTimerRef.current !== null) {
             window.clearTimeout(selectionCopyResetTimerRef.current);
             selectionCopyResetTimerRef.current = null;
@@ -192,6 +196,14 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
                 return;
             }
             const rect = range.getBoundingClientRect();
+            const markdownRoot = contentRef.current?.querySelector('.markdown-body') || contentRef.current;
+            let anchorOccurrenceIndex = 0;
+            if (markdownRoot.contains(range.startContainer)) {
+                const textBeforeRange = document.createRange();
+                textBeforeRange.selectNodeContents(markdownRoot);
+                textBeforeRange.setEnd(range.startContainer, range.startOffset);
+                anchorOccurrenceIndex = getAnchorOccurrenceIndex(textBeforeRange.toString(), selected);
+            }
             const highlightRects = buildSelectionHighlightRects(
                 Array.from(range.getClientRects()).map((clientRect) => ({
                     top: clientRect.top,
@@ -202,6 +214,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
             );
 
             setSelectedText(selected);
+            setSelectedAnchorOccurrenceIndex(anchorOccurrenceIndex);
             setCopiedSelection(false);
             setSelectionHighlightRects(highlightRects);
             setBtnPosition({
@@ -220,38 +233,26 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, sessionId, messageIn
         if (!session) return;
         const messageListEl = contentRef.current?.closest('.message-list') as HTMLElement | null;
         const preservedScrollTop = messageListEl?.scrollTop;
-        const subSessionId = `sub-${Date.now()}`;
-        const anchor = selectedText.trim();
-        const mainContextSnapshotMessages = session.messages.map((m) => ({
-            ...m,
-            annotations: m.annotations ? m.annotations.map((a) => ({ ...a })) : [],
-        }));
-
-        dispatch(spawnSession({
-            id: subSessionId,
-            parentId: message.id,
-            anchorText: anchor,
-            anchorMessageId: message.id,
-            messages: [],
+        const artifacts = createSubSessionArtifacts({
+            parentMessageId: message.id,
+            anchorText: selectedText,
+            sourceSession: session,
             modelId: subModelId,
-            isLoading: false,
             contextMode: subSessionContextMode,
-            mainContextSnapshotMessages,
-        }));
+            timestamp: Date.now(),
+            anchorOccurrenceIndex: selectedAnchorOccurrenceIndex,
+        });
+
+        dispatch(spawnSession(artifacts.nextSession));
 
         dispatch(addAnnotation({
             sessionId,
             messageId: message.id,
-            annotation: {
-                id: `anno-${Date.now()}`,
-                subSessionId,
-                anchorText: anchor,
-                createdAt: Date.now(),
-            }
+            annotation: artifacts.annotation,
         }));
 
         clearSelectionOverlay();
-        setExpandedSessionId(subSessionId);
+        setExpandedSessionId(artifacts.subSessionId);
 
         // Clear browser selection
         clearBrowserSelection(window.getSelection());
