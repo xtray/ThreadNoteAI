@@ -108,3 +108,12 @@ describe('aiSaga regenerate flow', () => {
         expect(generator.next().done).toBe(true);
     });
 });
+
+describe('stream failure output', () => {
+    it('retains generated text before showing a continuation failure', async () => {
+        const { formatStreamFailure } = await import('./aiSaga');
+        expect(formatStreamFailure('partial answer', 'network failure'))
+            .toBe('partial answer\n\n❌ Request failed: network failure');
+        expect(formatStreamFailure('', 'network failure')).toBe('❌ Request failed: network failure');
+    });
+});

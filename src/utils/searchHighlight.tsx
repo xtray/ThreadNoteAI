@@ -62,7 +62,10 @@ const transformNode = (node: React.ReactNode, normalizedQuery: string, keyPrefix
         return node;
     }
 
-    const props = node.props as { children?: React.ReactNode };
+    const props = node.props as { children?: React.ReactNode; className?: string };
+    if (props.className?.split(/\s+/).some(name => name === 'katex' || name === 'katex-display')) {
+        return node;
+    }
     if (props.children === undefined) {
         return node;
     }

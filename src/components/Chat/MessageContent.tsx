@@ -1,6 +1,10 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
+import { prepareMathMarkdown, remarkDisplayMath } from '../../utils/mathMarkdown';
 import { ChevronDown, ChevronRight, Brain, Check, Copy } from 'lucide-react';
 import { MessageAnnotation } from '../../store/slices/sessionSlice';
 import { copyTextToClipboard } from './turnUtils';
@@ -69,11 +73,11 @@ const MessageContent: React.FC<MessageContentProps> = ({
     const thinkMatches: string[] = [];
     let match;
     while ((match = thinkRegex.exec(content)) !== null) {
-        thinkMatches.push(match[1].trim());
+        thinkMatches.push(match[1]);
     }
 
     // Remove <think> blocks from the main content
-    const mainContent = content.replace(thinkRegex, '').trim();
+    const mainContent = content.replace(thinkRegex, '');
 
     const sortedAnnotations = useMemo(
         () => [...(annotations || [])].sort((a, b) => a.createdAt - b.createdAt),
@@ -111,7 +115,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
                 const text = node.textContent || '';
                 if (!text.trim()) return NodeFilter.FILTER_SKIP;
                 const parent = (node as Text).parentElement;
-                if (!parent) return NodeFilter.FILTER_SKIP;
+                if (!parent || parent.closest('.katex')) return NodeFilter.FILTER_SKIP;
                 return NodeFilter.FILTER_ACCEPT;
             },
         });
@@ -327,8 +331,8 @@ const MessageContent: React.FC<MessageContentProps> = ({
                     {thinkExpanded && (
                         <div className="think-content">
                             {thinkMatches.map((thinking, i) => (
-                                <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
-                                    {thinking}
+                                <ReactMarkdown key={i} remarkPlugins={[remarkGfm, remarkMath, remarkDisplayMath]} rehypePlugins={[rehypeKatex]}>
+                                    {prepareMathMarkdown(thinking)}
                                 </ReactMarkdown>
                             ))}
                         </div>
@@ -337,7 +341,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
             )}
 
             {/* Main response — rendered as Markdown */}
-            {mainContent && (
+            {mainContent.trim() && (
                 <div
                     className="markdown-body"
                     ref={markdownRef}
@@ -345,10 +349,10 @@ const MessageContent: React.FC<MessageContentProps> = ({
                     onContextMenu={handleMarkdownContextMenu}
                 >
                     <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
+                        remarkPlugins={[remarkGfm, remarkMath, remarkDisplayMath]} rehypePlugins={[rehypeKatex]}
                         components={renderers}
                     >
-                        {mainContent}
+                        {prepareMathMarkdown(mainContent)}
                     </ReactMarkdown>
                 </div>
             )}

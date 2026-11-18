@@ -184,7 +184,17 @@ const streamViaExtension = async (
 type SseState = {
     buffer: string;
     full: string;
+    stopReason?: string;
 };
+
+const getStopReason = (data: any): string | undefined =>
+    data?.choices?.[0]?.finish_reason
+    ?? data?.delta?.stop_reason
+    ?? data?.stop_reason
+    ?? data?.candidates?.[0]?.finishReason;
+
+const isTokenLimited = (reason?: string) =>
+    reason === 'length' || reason === 'max_tokens' || reason === 'MAX_TOKENS';
 
 const parseOpenAICompatSseChunk = (
     chunk: string,
@@ -212,6 +222,7 @@ const parseOpenAICompatSseChunk = (
             throw new Error(extractProviderError(parsed));
         }
 
+        state.stopReason = getStopReason(parsed) ?? state.stopReason;
         const delta = parsed?.choices?.[0]?.delta?.content;
         if (typeof delta === 'string' && delta.length > 0) {
             state.full += delta;
@@ -246,6 +257,7 @@ const parseAnthropicSseChunk = (
             throw new Error(extractProviderError(parsed));
         }
 
+        state.stopReason = getStopReason(parsed) ?? state.stopReason;
         const text = parsed?.type === 'content_block_delta'
             ? parsed?.delta?.text
             : null;
@@ -282,6 +294,7 @@ const parseGoogleSseChunk = (
             throw new Error(extractProviderError(parsed));
         }
 
+        state.stopReason = getStopReason(parsed) ?? state.stopReason;
         const text = parsed?.candidates?.[0]?.content?.parts
             ?.map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
             .join('') || '';
@@ -427,13 +440,13 @@ export const callAI = async (
     return data.choices[0].message.content;
 };
 
-export const callAIStream = async (
+const callAIStreamOnce = async (
     modelId: string,
     messages: Message[],
     config: Pick<ConfigState, 'apiKeys' | 'customProviders'>,
     onContent: (content: string) => void,
     signal?: AbortSignal,
-): Promise<string> => {
+): Promise<{ content: string; limited: boolean }> => {
     const resolved = resolveChatRequest(modelId, config);
     let streamUrl = resolved.url;
     let streamHeaders = resolved.headers;
@@ -529,13 +542,13 @@ export const callAIStream = async (
             } catch { /* ignore */ }
             const full = parseJsonFallback(data);
             onContent(full);
-            return full;
+            return { content: full, limited: isTokenLimited(getStopReason(data)) };
         }
         if (contentType.includes('text/event-stream')) {
             parseChunk('\n', sseState, onContent);
-            return sseState.full;
+            return { content: sseState.full, limited: isTokenLimited(sseState.stopReason) };
         }
-        return result.bodyText;
+        return { content: result.bodyText, limited: false };
     }
 
     const response = await fetch(streamUrl, {
@@ -560,7 +573,7 @@ export const callAIStream = async (
         const data = await response.json();
         const full = parseJsonFallback(data);
         onContent(full);
-        return full;
+        return { content: full, limited: isTokenLimited(getStopReason(data)) };
     }
     if (!response.body) {
         throw new Error('Streaming response has no body');
@@ -578,5 +591,43 @@ export const callAIStream = async (
     }
 
     parseChunk('\n', sseState, onContent);
-    return sseState.full;
+    return { content: sseState.full, limited: isTokenLimited(sseState.stopReason) };
+};
+
+/** Continue only explicit token-limit stops; transport failures are never retried. */
+export const callAIStream = async (
+    modelId: string,
+    messages: Message[],
+    config: Pick<ConfigState, 'apiKeys' | 'customProviders'>,
+    onContent: (content: string) => void,
+    signal?: AbortSignal,
+): Promise<string> => {
+    let full = '';
+    let requestMessages = messages;
+    for (let continuation = 0; ; continuation++) {
+        if (signal?.aborted) throw makeAbortError();
+        const prefix = full;
+        const result = await callAIStreamOnce(
+            modelId, requestMessages, config,
+            (content) => onContent(prefix + content), signal,
+        );
+        full += result.content;
+        if (signal?.aborted) throw makeAbortError();
+        if (!result.limited) return full;
+        if (!result.content.trim()) {
+            throw new Error('模型达到输出上限但未返回正文，无法自动续写。');
+        }
+        if (continuation >= 32) {
+            throw new Error('已达到自动续写次数上限，回答可能尚未完成。');
+        }
+        const timestamp = Date.now();
+        requestMessages = [
+            ...messages,
+            { id: 'continuation-assistant', role: 'assistant', content: full, timestamp },
+            {
+                id: 'continuation-user', role: 'user', timestamp,
+                content: 'Continue exactly where your previous response stopped. Do not repeat or summarize any previous content, add a preamble, or restart formatting. Complete the original request.',
+            },
+        ];
+    }
 };

@@ -2665,3 +2665,15 @@ html,
         padding: 0.9rem 0.9rem 1.1rem;
     }
 }
+
+/* Keep wide formulas scrollable within conversation and reasoning panels. */
+.message-content .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+
+.message-content .katex {
+  font-size: 1.1em;
+}

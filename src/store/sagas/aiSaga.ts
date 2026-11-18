@@ -121,6 +121,9 @@ const isAbortError = (error: any) =>
     || error?.name === 'CanceledError'
     || error?.name === 'AbortError';
 
+export const formatStreamFailure = (content: string, message: string) =>
+    `${content.trim() ? content + '\n\n' : ''}❌ Request failed: ${message}`;
+
 const extractErrorMessage = (error: any) =>
     error?.response?.data?.error?.message
     || error?.response?.data?.base_resp?.status_msg
@@ -256,7 +259,7 @@ const streamRootModelReply = async (options: {
             return;
         }
 
-        const failureContent = `❌ Request failed: ${extractErrorMessage(error)}`;
+        const failureContent = formatStreamFailure(latestContent, extractErrorMessage(error));
         getSagaStore().dispatch(upsertMultiModelRoundReply({
             sessionId: options.sessionId,
             roundId: options.roundId,
@@ -437,7 +440,7 @@ function* handleSendMessage(action: SendMessageAction) {
                     yield put(updateMessage({
                         sessionId,
                         messageId: assistantMessageId,
-                        content: `❌ Request failed: ${errMsg}`,
+                        content: formatStreamFailure(assistantMsg.content, errMsg),
                         modelId: session.modelId,
                     }));
                 }
