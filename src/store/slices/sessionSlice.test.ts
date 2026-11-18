@@ -82,6 +82,32 @@ describe('sessionSlice removeTurn', () => {
         expect(next.sessions['sub-1']).toBeUndefined();
     });
 
+    it('returns to parent session when removing the active sub-session with its turn', () => {
+        const start = buildState();
+        start.activeSessionId = 'sub-1';
+        const next = reducer(start, {
+            type: 'sessions/removeTurn',
+            payload: { sessionId: 'main', messageId: 'a1' },
+        });
+        expect(next.activeSessionId).toBe('main');
+    });
+
+    it('removes model replies and tab state belonging to the deleted round', () => {
+        let start = buildState();
+        start.sessions.main.messages[1].roundId = 'round-1';
+        start = reducer(start, initializeMultiModelRound({
+            sessionId: 'main', roundId: 'round-1', selectedModelIds: ['model-main'],
+        }));
+        const next = reducer(start, {
+            type: 'sessions/removeTurn',
+            payload: { sessionId: 'main', messageId: 'a1' },
+        });
+        expect(next.sessions.main.multiModel?.rounds['round-1']).toBeUndefined();
+        expect(next.sessions.main.multiModel?.roundActiveTabModelIds['round-1']).toBeUndefined();
+        expect(next.sessions.main.multiModel?.activeRoundId).toBeNull();
+        expect(next.sessions.main.multiModel?.activeTabModelId).toBeNull();
+    });
+
     it('removes user+assistant turn when clicking user message', () => {
         const start = buildState();
 

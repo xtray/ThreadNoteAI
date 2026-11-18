@@ -7,8 +7,12 @@ import { Note } from '../slices/notesSlice';
 function* persistCreatedSession(action: { payload: ChatSession }) {
     try {
         yield call(initDB);
-        yield call(saveSession, action.payload);
-        yield call(saveActiveSessionId, action.payload.id);
+        const state: RootState = yield select();
+        const session = state.sessions.sessions[action.payload.id];
+        if (!session) return;
+        yield call(saveSession, session);
+        const latestState: RootState = yield select();
+        yield call(saveActiveSessionId, latestState.sessions.activeSessionId);
     } catch {
         // Keep app flow alive even if persistence fails temporarily.
     }
@@ -17,7 +21,10 @@ function* persistCreatedSession(action: { payload: ChatSession }) {
 function* persistSpawnedSession(action: { payload: ChatSession }) {
     try {
         yield call(initDB);
-        yield call(saveSession, action.payload);
+        const state: RootState = yield select();
+        const session = state.sessions.sessions[action.payload.id];
+        if (!session) return;
+        yield call(saveSession, session);
     } catch {
         // Keep app flow alive even if persistence fails temporarily.
     }
@@ -28,10 +35,10 @@ function* persistMessage(action: { payload: { sessionId: string; message: Messag
         yield call(initDB);
         const state: RootState = yield select();
         const session = state.sessions.sessions[action.payload.sessionId];
-        if (session) {
-            yield call(saveSession, session);
-        }
-        yield call(saveMessage, action.payload.sessionId, action.payload.message);
+        const message = session?.messages.find((item) => item.id === action.payload.message.id);
+        if (!session || !message) return;
+        yield call(saveSession, session);
+        yield call(saveMessage, action.payload.sessionId, message);
     } catch {
         // Keep app flow alive even if persistence fails temporarily.
     }
@@ -89,16 +96,20 @@ function* persistRemovedSubSession() {
 function* persistNote(action: { payload: Note }) {
     try {
         yield call(initDB);
-        yield call(saveNote, action.payload);
+        const state: RootState = yield select();
+        const note = state.notes.notes[action.payload.id];
+        if (!note) return;
+        yield call(saveNote, note);
     } catch {
         // Keep app flow alive even if persistence fails temporarily.
     }
 }
 
-function* persistLoadedNotes(action: { payload: Record<string, Note> }) {
+function* persistLoadedNotes() {
     try {
         yield call(initDB);
-        yield call(replaceAllNotesData, action.payload);
+        const state: RootState = yield select();
+        yield call(replaceAllNotesData, state.notes.notes);
     } catch {
         // Keep app flow alive even if persistence fails temporarily.
     }

@@ -394,6 +394,23 @@ const sessionSlice = createSlice({
                 delete state.sessions[id];
             });
 
+            if (state.activeSessionId && toDelete.has(state.activeSessionId)) {
+                state.activeSessionId = sessionId;
+            }
+
+            if (session.multiModel) {
+                const multiModel = session.multiModel;
+                messagesToRemove.forEach((message) => {
+                    if (!message.roundId) return;
+                    delete multiModel.rounds[message.roundId];
+                    delete multiModel.roundActiveTabModelIds[message.roundId];
+                });
+                if (multiModel.activeRoundId && !multiModel.rounds[multiModel.activeRoundId]) {
+                    multiModel.activeRoundId = null;
+                    multiModel.activeTabModelId = null;
+                }
+            }
+
             session.messages.splice(userIndex, hasAssistantReply ? 2 : 1);
         },
         removeMessage: (state, action: PayloadAction<{ sessionId: string; messageId: string }>) => {
