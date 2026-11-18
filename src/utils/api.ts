@@ -128,14 +128,22 @@ const streamViaExtension = async (
                     status: Number(message.status) || 0,
                     contentType: typeof message.contentType === 'string' ? message.contentType : '',
                 };
-                onResponse?.(meta);
+                try {
+                    onResponse?.(meta);
+                } catch (error) {
+                    finish(() => reject(error));
+                }
                 return;
             }
 
             if (message.type === 'chunk') {
                 const chunk = typeof message.chunk === 'string' ? message.chunk : '';
                 bodyText += chunk;
-                onChunk(chunk);
+                try {
+                    onChunk(chunk);
+                } catch (error) {
+                    finish(() => reject(error));
+                }
                 return;
             }
 
@@ -279,11 +287,7 @@ const parseGoogleSseChunk = (
             .join('') || '';
         if (!text) continue;
 
-        if (state.full && text.startsWith(state.full)) {
-            state.full = text;
-        } else {
-            state.full += text;
-        }
+        state.full += text;
         onContent(state.full);
     }
 };

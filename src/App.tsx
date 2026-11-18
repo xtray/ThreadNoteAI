@@ -302,8 +302,13 @@ function App() {
             setWorkspaceMode('ai');
         }
 
-        await resetSessionDB();
-        setIsClearingChats(false);
+        try {
+            await resetSessionDB();
+        } catch (error) {
+            console.error('Failed to clear local chat history.', error);
+        } finally {
+            setIsClearingChats(false);
+        }
     };
 
     const handleDeleteNote = (noteId: string) => {

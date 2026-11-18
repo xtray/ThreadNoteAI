@@ -64,13 +64,28 @@ const openDB = () =>
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      const connectionPromise = dbPromise;
+      const invalidateConnection = () => {
+        if (dbPromise === connectionPromise) dbPromise = null;
+      };
+      db.onversionchange = () => {
+        db.close();
+        invalidateConnection();
+      };
+      db.onclose = invalidateConnection;
+      resolve(db);
+    };
     request.onerror = () => reject(request.error || new Error('Failed to open IndexedDB'));
   });
 
 const getDB = async () => {
   if (!dbPromise) {
-    dbPromise = openDB();
+    dbPromise = openDB().catch((error) => {
+      dbPromise = null;
+      throw error;
+    });
   }
   return dbPromise;
 };

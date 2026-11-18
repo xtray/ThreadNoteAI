@@ -120,13 +120,14 @@ const toggleTaskStateAtIndex = (block: string, taskIndex: number): string => {
 
 const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' }) => {
     const dispatch = useDispatch();
-    const [blocks, setBlocks] = useState<string[]>(['']);
+    const [blocks, setBlocks] = useState<string[]>(() => splitMarkdownBlocks(note?.content || ''));
+    const displayedNoteIdRef = useRef(note?.id);
+    const lastSavedContentRef = useRef<{ id: string; content: string } | null>(null);
     const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null);
     const editorShellRef = useRef<HTMLDivElement>(null);
     const blockListRef = useRef<HTMLDivElement>(null);
     const titleRef = useRef<HTMLHeadingElement>(null);
     const textareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
-    const draft = useMemo(() => joinMarkdownBlocks(blocks), [blocks]);
     const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
     const searchTarget = useMemo(
         () => (note ? buildNoteSearchTarget(note, normalizedSearchQuery) : null),
@@ -144,6 +145,9 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' 
     }, []);
 
     useEffect(() => {
+        const isSameNote = displayedNoteIdRef.current === note?.id;
+        displayedNoteIdRef.current = note?.id;
+        if (isSameNote && note?.id === lastSavedContentRef.current?.id && note?.content === lastSavedContentRef.current?.content) return;
         setBlocks(splitMarkdownBlocks(note?.content || ''));
         setActiveBlockIndex(null);
     }, [note?.id, note?.content]);
@@ -153,32 +157,14 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' 
         resizeTextarea(textareaRefs.current[activeBlockIndex]);
     }, [activeBlockIndex, blocks, resizeTextarea]);
 
-    useEffect(() => {
+    // Persist directly from edit events so switching notes or unmounting cannot
+    // cancel a pending save. Opening a note never normalizes its stored text.
+    const persistBlocks = React.useCallback((next: string[]) => {
         if (!note) return;
-        if (draft === note.content) return;
-        const timer = window.setTimeout(() => {
-            dispatch(
-                upsertNote({
-                    ...note,
-                    content: draft,
-                    updatedAt: Date.now(),
-                })
-            );
-        }, 220);
-        return () => window.clearTimeout(timer);
-    }, [dispatch, note, draft]);
-
-    const persistNow = React.useCallback(() => {
-        if (!note) return;
-        if (draft === note.content) return;
-        dispatch(
-            upsertNote({
-                ...note,
-                content: draft,
-                updatedAt: Date.now(),
-            })
-        );
-    }, [dispatch, note, draft]);
+        const content = joinMarkdownBlocks(next);
+        lastSavedContentRef.current = { id: note.id, content };
+        dispatch(upsertNote({ ...note, content, updatedAt: Date.now() }));
+    }, [dispatch, note]);
 
     const activateBlock = React.useCallback((index: number) => {
         if (!note) return;
@@ -194,26 +180,23 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ note, searchQuery = '' 
     }, [note, resizeTextarea]);
 
     const updateBlock = React.useCallback((index: number, value: string) => {
-        setBlocks((prev) => {
-            const next = [...prev];
-            next[index] = value;
-            return next;
-        });
-    }, []);
+        const next = [...blocks];
+        next[index] = value;
+        setBlocks(next);
+        persistBlocks(next);
+    }, [blocks, persistBlocks]);
 
     const toggleTaskInBlock = React.useCallback((blockIndex: number, taskIndex: number) => {
-        setBlocks((prev) => {
-            if (!prev[blockIndex]) return prev;
-            const next = [...prev];
-            next[blockIndex] = toggleTaskStateAtIndex(next[blockIndex], taskIndex);
-            return next;
-        });
-    }, []);
+        if (!blocks[blockIndex]) return;
+        const next = [...blocks];
+        next[blockIndex] = toggleTaskStateAtIndex(next[blockIndex], taskIndex);
+        setBlocks(next);
+        persistBlocks(next);
+    }, [blocks, persistBlocks]);
 
     const leaveEditing = React.useCallback(() => {
-        persistNow();
         setActiveBlockIndex(null);
-    }, [persistNow]);
+    }, []);
 
     useEffect(() => {
         if (!normalizedSearchQuery) return;
